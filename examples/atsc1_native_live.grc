@@ -1,0 +1,366 @@
+options:
+  parameters: {id: atsc1_native_live, title: 'rxtune owns a native receiver: ATSC 1.0 (8-VSB)', author: gr-rxtune,
+    generate_options: qt_gui, output_language: python, category: '[GRC Hier Blocks]', run: 'True', run_options: prompt,
+    gen_cmake: 'On', description: The controller tunes the SDRplay's gain elements from the equalizer's MER while
+      the television picture plays.}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [8, 8]
+    rotation: 0
+    state: enabled
+blocks:
+- name: sps
+  id: variable
+  parameters: {value: '1.1'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [230, 12]
+    rotation: 0
+    state: enabled
+- name: out_rate
+  id: variable
+  parameters: {value: (4.5e6/286*684)*sps}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [340, 12]
+    rotation: 0
+    state: enabled
+- name: freq
+  id: parameter
+  parameters: {label: Channel centre (Hz), type: eng_float, value: 600e6, short_id: f}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [520, 12]
+    rotation: 0
+    state: enabled
+- name: antenna
+  id: parameter
+  parameters: {label: Antenna port, type: str, value: '"Antenna A"', short_id: a}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [700, 12]
+    rotation: 0
+    state: enabled
+- name: fold
+  id: import
+  parameters: {imports: 'import os; os.environ.setdefault(''STVT_FPLL_FOLD'', ''1'')'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [900, 12]
+    rotation: 0
+    state: enabled
+- name: note_radio
+  id: note
+  parameters: {note: 1. THE RADIO}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [8, 185]
+    rotation: 0
+    state: enabled
+- name: sdr
+  id: soapy_sdrplay_source
+  parameters: {type: fc32, samp_rate: 8e6, antenna: antenna, center_freq: freq, agc: 'False', gain: '20', lna_state: '4',
+    comment: 'gains arrive on ''cmd'', per element'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [8, 260]
+    rotation: 0
+    state: enabled
+- name: spectrum
+  id: qtgui_freq_sink_x
+  parameters: {type: complex, name: '"channel (baseband)"', fftsize: '2048', fc: '0', bw: 8e6, average: '0.05',
+    gui_hint: '0,0,1,1'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [330, 200]
+    rotation: 0
+    state: enabled
+- name: note_rx
+  id: note
+  parameters: {note: '2. THE RECEIVER (gr-atscplus: the production STVT chain)'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [8, 545]
+    rotation: 0
+    state: enabled
+- name: scale
+  id: blocks_multiply_const_vxx
+  parameters: {type: complex, const: '32768.0'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [8, 632]
+    rotation: 0
+    state: enabled
+- name: resamp
+  id: rational_resampler_xxx
+  parameters: {type: ccc, interp: '25', decim: '32', taps: '[]', fbw: '0'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [200, 620]
+    rotation: 0
+    state: enabled
+- name: rxf
+  id: dtv_atsc_rx_filter
+  parameters: {rate: 6.25e6, sps: sps}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [420, 632]
+    rotation: 0
+    state: enabled
+- name: fpll
+  id: atscplus_atsc_fpll_tight
+  parameters: {rate: out_rate, alpha: '0.001', afc_tau_us: '25'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [640, 620]
+    rotation: 0
+    state: enabled
+- name: sync
+  id: atscplus_atsc_sync_soft
+  parameters: {rate: out_rate}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [900, 632]
+    rotation: 0
+    state: enabled
+- name: fsc
+  id: atscplus_atsc_fs_checker_inst
+  parameters: {}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1120, 632]
+    rotation: 0
+    state: enabled
+- name: eq
+  id: atscplus_atsc_equalizer_long
+  parameters: {}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [8, 820]
+    rotation: 0
+    state: enabled
+- name: vit
+  id: atscplus_atsc_viterbi_soft
+  parameters: {}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [280, 820]
+    rotation: 0
+    state: enabled
+- name: dei
+  id: dtv_atsc_deinterleaver
+  parameters: {}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [520, 820]
+    rotation: 0
+    state: enabled
+- name: rs
+  id: dtv_atsc_rs_decoder
+  parameters: {}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [740, 820]
+    rotation: 0
+    state: enabled
+- name: derand
+  id: dtv_atsc_derandomizer
+  parameters: {}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [960, 820]
+    rotation: 0
+    state: enabled
+- name: depad
+  id: dtv_atsc_depad
+  parameters: {}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1180, 830]
+    rotation: 0
+    state: enabled
+- name: s2v
+  id: blocks_stream_to_vector
+  parameters: {type: byte, num_items: '188', vlen: '1'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [8, 1020]
+    rotation: 0
+    state: enabled
+- name: tei
+  id: atscplus_tei_scrub
+  parameters: {scrub: 'True', report_s: '1.0', comment: clean packets = LIVENESS}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [220, 1010]
+    rotation: 0
+    state: enabled
+- name: v2s
+  id: blocks_vector_to_stream
+  parameters: {type: byte, num_items: '188', vlen: '1'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [470, 1020]
+    rotation: 0
+    state: enabled
+- name: udp
+  id: network_udp_sink
+  parameters: {type: byte, addr: '"127.0.0.1"', port: '5004', header: '0', payloadsize: '1316', send_eof: 'False',
+    vlen: '1'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [720, 1000]
+    rotation: 0
+    state: enabled
+- name: probe
+  id: atscplus_eq_probe
+  parameters: {rate_hz: '5', segments: '48', eq_getter: 'lambda: self.eq', name: '"MER"', comment: 'the DIAL: decision-directed
+      MER, continuous'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [8, 920]
+    rotation: 0
+    state: enabled
+- name: note_loop
+  id: note
+  parameters: {note: '3. THE LOOP, live: gain changes while the picture plays'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [8, 1115]
+    rotation: 0
+    state: enabled
+- name: ctl
+  id: rxtune_controller
+  parameters: {axes: '[{"name": "gain:RFGR", "lo": 0, "hi": 12, "step": 1, "sense": "reduction"}, {"name": "gain:IFGR",
+      "lo": 20, "hi": 59, "step": 1, "sense": "reduction"}]', dialect: soapy, dial_name: MER, cliff: '15.2', settle_s: '2.0',
+    window_s: '4.0', min_samples: '8', coarse_points: '3', max_cells: '40', pick: headroom, comment: 4 s of MER
+      per cell; the equalizer re-converges in about a second}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [8, 1190]
+    rotation: 0
+    state: enabled
+- name: dash
+  id: rxtune_dashboard
+  parameters: {label: 'rxtune: ATSC 1.0 (native)', units: dB, cliff: '15.2', dial_max: '30', gui_hint: '1,0,1,1'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [330, 1180]
+    rotation: 0
+    state: enabled
+- name: panel
+  id: atscplus_vsb_panel
+  parameters: {label: '"ATSC 1.0 / 8-VSB"', cliff_db: '15.2', gui_hint: '1,1,1,1'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [700, 1180]
+    rotation: 0
+    state: enabled
+- name: video
+  id: atscplus_video_pane
+  parameters: {url: '"udp://127.0.0.1:5004?fifo_size=1000000&overrun_nonfatal=1"', player: '"mpv"', vid: '0', aid: '0',
+    player_args: '""', start_delay_s: '4', gui_hint: '0,1,1,1'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1000, 1180]
+    rotation: 0
+    state: enabled
+connections:
+- [sdr, '0', spectrum, '0']
+- [sdr, '0', scale, '0']
+- [scale, '0', resamp, '0']
+- [resamp, '0', rxf, '0']
+- [rxf, '0', fpll, '0']
+- [fpll, '0', sync, '0']
+- [sync, '0', fsc, '0']
+- [fsc, '0', eq, '0']
+- [fsc, '1', eq, '1']
+- [eq, '0', vit, '0']
+- [eq, '1', vit, '1']
+- [vit, '0', dei, '0']
+- [vit, '1', dei, '1']
+- [dei, '0', rs, '0']
+- [dei, '1', rs, '1']
+- [rs, '0', derand, '0']
+- [rs, '1', derand, '1']
+- [derand, '0', depad, '0']
+- [depad, '0', s2v, '0']
+- [s2v, '0', tei, '0']
+- [tei, '0', v2s, '0']
+- [v2s, '0', udp, '0']
+- [eq, '0', probe, '0']
+- [probe, dial, ctl, dial]
+- [tei, liveness, ctl, liveness]
+- [ctl, cmd, sdr, cmd]
+- [probe, dial, dash, dial]
+- [ctl, status, dash, status]
+- [ctl, verdict, dash, verdict]
+- [probe, dial, panel, dial]
+- [probe, symbols, panel, symbols]
+- [probe, taps, panel, taps]
+- [tei, stats, panel, stats]
+metadata: {file_format: 1, grc_version: 3.10.12.0}

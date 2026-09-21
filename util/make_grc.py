@@ -181,8 +181,93 @@ def build_atsc3():
     }, name
 
 
+def build_atsc1():
+    """The loop OWNS a native GNU Radio receiver: ATSC 1.0 (8-VSB) through gr-atscplus, tuned
+    LIVE from the equalizer's MER while the picture plays. No capture per cell, no restart:
+    the dial is continuous and the receiver keeps running through every gain change - the
+    attachment mode the ATSC 3.0 example could not use. Needs gr-atscplus (installed, or its
+    examples/_devpath.py from a source tree). Nothing about any station is in the file:
+    channel, antenna and gains are Parameters."""
+    R1, R2 = 260, 620
+    sym = "4.5e6/286*684"
+    axes = ('[{"name": "gain:RFGR", "lo": 0, "hi": 12, "step": 1, "sense": "reduction"}, '
+            '{"name": "gain:IFGR", "lo": 20, "hi": 59, "step": 1, "sense": "reduction"}]')
+    b = [
+        blk("sps", "variable", 230, 12, value="1.1"),
+        blk("out_rate", "variable", 340, 12, value=f"({sym})*sps"),
+        blk("freq", "parameter", 520, 12, label="Channel centre (Hz)", type="eng_float", value="600e6",
+            short_id="f"),
+        blk("antenna", "parameter", 700, 12, label="Antenna port", type="str", value='"Antenna A"',
+            short_id="a"),
+        blk("fold", "import", 900, 12, imports="import os; os.environ.setdefault('STVT_FPLL_FOLD', '1')"),
+        blk("note_radio", "note", 8, R1 - 75, note="1. THE RADIO"),
+        blk("sdr", "soapy_sdrplay_source", 8, R1, type="fc32", samp_rate="8e6", antenna="antenna",
+            center_freq="freq", agc=False, gain=20, lna_state=4, comment="gains arrive on 'cmd', per element"),
+        blk("spectrum", "qtgui_freq_sink_x", 330, R1 - 60, type="complex", name='"channel (baseband)"',
+            fftsize=2048, fc=0, bw="8e6", average=0.05, gui_hint="0,0,1,1"),
+        blk("note_rx", "note", 8, R2 - 75, note="2. THE RECEIVER (gr-atscplus: the production STVT chain)"),
+        blk("scale", "blocks_multiply_const_vxx", 8, R2 + 12, type="complex", const=32768.0),
+        blk("resamp", "rational_resampler_xxx", 200, R2, type="ccc", interp=25, decim=32, taps="[]", fbw=0),
+        blk("rxf", "dtv_atsc_rx_filter", 420, R2 + 12, rate="6.25e6", sps="sps"),
+        blk("fpll", "atscplus_atsc_fpll_tight", 640, R2, rate="out_rate", alpha=0.001, afc_tau_us=25),
+        blk("sync", "atscplus_atsc_sync_soft", 900, R2 + 12, rate="out_rate"),
+        blk("fsc", "atscplus_atsc_fs_checker_inst", 1120, R2 + 12),
+        blk("eq", "atscplus_atsc_equalizer_long", 8, R2 + 200),
+        blk("vit", "atscplus_atsc_viterbi_soft", 280, R2 + 200),
+        blk("dei", "dtv_atsc_deinterleaver", 520, R2 + 200),
+        blk("rs", "dtv_atsc_rs_decoder", 740, R2 + 200),
+        blk("derand", "dtv_atsc_derandomizer", 960, R2 + 200),
+        blk("depad", "dtv_atsc_depad", 1180, R2 + 210),
+        blk("s2v", "blocks_stream_to_vector", 8, R2 + 400, type="byte", num_items=188, vlen=1),
+        blk("tei", "atscplus_tei_scrub", 220, R2 + 390, scrub="True", report_s=1.0,
+            comment="clean packets = LIVENESS"),
+        blk("v2s", "blocks_vector_to_stream", 470, R2 + 400, type="byte", num_items=188, vlen=1),
+        blk("udp", "network_udp_sink", 720, R2 + 380, type="byte", addr='"127.0.0.1"', port=5004, header="0",
+            payloadsize=1316, send_eof="False", vlen=1),
+        blk("probe", "atscplus_eq_probe", 8, R2 + 300, rate_hz=5, segments=48, eq_getter="lambda: self.eq",
+            name='"MER"', comment="the DIAL: decision-directed MER, continuous"),
+        blk("note_loop", "note", 8, R2 + 495, note="3. THE LOOP, live: gain changes while the picture plays"),
+        blk("ctl", "rxtune_controller", 8, R2 + 570, axes=axes, dialect="soapy", dial_name="MER", cliff=15.2,
+            settle_s=2.0, window_s=4.0, min_samples=8, coarse_points=3, max_cells=40, pick="headroom",
+            comment="4 s of MER per cell; the equalizer re-converges in about a second"),
+        blk("dash", "rxtune_dashboard", 330, R2 + 560, label="rxtune: ATSC 1.0 (native)", units="dB",
+            cliff=15.2, dial_max=30, gui_hint="1,0,1,1"),
+        blk("panel", "atscplus_vsb_panel", 700, R2 + 560, label='"ATSC 1.0 / 8-VSB"', cliff_db=15.2,
+            gui_hint="1,1,1,1"),
+        blk("video", "atscplus_video_pane", 1000, R2 + 560,
+            url='"udp://127.0.0.1:5004?fifo_size=1000000&overrun_nonfatal=1"', player='"mpv"', vid=0, aid=0,
+            player_args='""', start_delay_s=4, gui_hint="0,1,1,1"),
+    ]
+    c = [["sdr", "0", "spectrum", "0"], ["sdr", "0", "scale", "0"],
+         ["scale", "0", "resamp", "0"], ["resamp", "0", "rxf", "0"], ["rxf", "0", "fpll", "0"],
+         ["fpll", "0", "sync", "0"], ["sync", "0", "fsc", "0"],
+         ["fsc", "0", "eq", "0"], ["fsc", "1", "eq", "1"], ["eq", "0", "vit", "0"], ["eq", "1", "vit", "1"],
+         ["vit", "0", "dei", "0"], ["vit", "1", "dei", "1"], ["dei", "0", "rs", "0"], ["dei", "1", "rs", "1"],
+         ["rs", "0", "derand", "0"], ["rs", "1", "derand", "1"], ["derand", "0", "depad", "0"],
+         ["depad", "0", "s2v", "0"], ["s2v", "0", "tei", "0"], ["tei", "0", "v2s", "0"], ["v2s", "0", "udp", "0"],
+         ["eq", "0", "probe", "0"],
+         ["probe", "dial", "ctl", "dial"], ["tei", "liveness", "ctl", "liveness"], ["ctl", "cmd", "sdr", "cmd"],
+         ["probe", "dial", "dash", "dial"], ["ctl", "status", "dash", "status"],
+         ["ctl", "verdict", "dash", "verdict"],
+         ["probe", "dial", "panel", "dial"], ["probe", "symbols", "panel", "symbols"],
+         ["probe", "taps", "panel", "taps"], ["tei", "stats", "panel", "stats"]]
+    name = "atsc1_native_live"
+    return {
+        "options": {"parameters": {"id": name, "title": "rxtune owns a native receiver: ATSC 1.0 (8-VSB)",
+                                   "author": "gr-rxtune", "generate_options": "qt_gui",
+                                   "output_language": "python", "category": "[GRC Hier Blocks]",
+                                   "run": "True", "run_options": "prompt", "gen_cmake": "On",
+                                   "description": "The controller tunes the SDRplay's gain elements from the "
+                                                  "equalizer's MER while the television picture plays."},
+                    "states": {"bus_sink": False, "bus_source": False, "bus_structure": None,
+                               "coordinate": [8, 8], "rotation": 0, "state": "enabled"}},
+        "blocks": b, "connections": c,
+        "metadata": {"file_format": 1, "grc_version": "3.10.12.0"},
+    }, name
+
+
 if __name__ == "__main__":
-    for doc, name in (build(True), build(False), build_atsc3()):
+    for doc, name in (build(True), build(False), build_atsc3(), build_atsc1()):
         path = os.path.join(ROOT, "examples", name + ".grc")
         with open(path, "w", encoding="utf-8") as f:
             yaml.safe_dump(doc, f, sort_keys=False, default_flow_style=None, width=110)
