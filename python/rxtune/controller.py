@@ -56,7 +56,7 @@ class controller(gr.basic_block):
                  settle_s=1.0, window_s=2.0, continuous_below_cliff=True, min_samples=5,
                  dialect="soapy", chan=None, autostart=True, pick="headroom", coarse_points=5,
                  max_cells=120, fixed=None, auto_recal=False, sag=1.5, sag_hold_s=10.0,
-                 frontend=None):
+                 frontend=None, allow_unsafe=False):
         gr.basic_block.__init__(self, name="rxtune_controller", in_sig=None, out_sig=None)
         self.spec = DialSpec(dial_name, units, higher_is_better=bool(higher_is_better),
                              cliff=None if cliff in (None, "", "None") else float(cliff),
@@ -70,8 +70,9 @@ class controller(gr.basic_block):
         self.auto_recal, self.sag, self.sag_hold_s = bool(auto_recal), float(sag), float(sag_hold_s)
         self.frontend = frontend           # device-handle mode: write knobs directly, with readback
         self.autostart = bool(autostart)
+        self.allow_unsafe = bool(allow_unsafe)
         problems = [] if frontend is not None else cmds.check(
-            dialect, [a.spec.name for a in self.axes] + list(self.fixed))
+            dialect, [a.spec.name for a in self.axes] + list(self.fixed), self.allow_unsafe)
         if problems:
             raise ValueError("; ".join(problems))
 
@@ -225,7 +226,8 @@ class controller(gr.basic_block):
                         if str(e) not in self.warnings:
                             self.warnings.append(str(e))
         else:
-            for _, body in cmds.commands(self.dialect, setting, self.current, self.chan):
+            for _, body in cmds.commands(self.dialect, setting, self.current, self.chan,
+                                         self.allow_unsafe):
                 self.message_port_pub(pmt.intern("cmd"), pmt.to_pmt(body))
         self.current.update(setting)
         return settle

@@ -136,6 +136,7 @@ def cmd_tune(args) -> int:
         try:
             fe.start(sink=dec.start())
             rep = tune(fe, scraper, scraper if args.live_re else None, lock=lk, fixed=fixed,
+                       health=dec.health,
                        search=args.search or (prof.search or None), pick=args.pick,
                        coarse_points=args.coarse, max_cells=args.max_cells,
                        known_bad=prof.is_known_bad(), thresholds=prof.thresholds or None,

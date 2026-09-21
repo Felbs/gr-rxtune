@@ -14,7 +14,17 @@ class Unsupported(ValueError):
     """The target block cannot do this by message."""
 
 
-def command(dialect: str, knob: str, value: Any, chan: int | None = None) -> Dict[str, Any]:
+SOAPY_SETTING_WARNING = (
+    "gr-soapy applies a 'setting' command PER CHANNEL and validates the key against the "
+    "channel's setting list. Drivers whose settings are device-level (SoapySDRPlay: biasT_ctrl, "
+    "rfnotch_ctrl, ...) reject it with 'Invalid setting', and because gr-soapy does not catch "
+    "exceptions in its command handler, that STOPS THE SOURCE BLOCK (measured on an RSPdx). "
+    "Use the Message Setter block -> write_setting(key, value), or pass allow_unsafe=True if "
+    "your driver's settings are per-channel.")
+
+
+def command(dialect: str, knob: str, value: Any, chan: int | None = None,
+            allow_unsafe: bool = False) -> Dict[str, Any]:
     """One command dict for one knob write."""
     kind, _, key = knob.partition(":")
     if dialect == "generic":
@@ -30,6 +40,8 @@ def command(dialect: str, knob: str, value: Any, chan: int | None = None) -> Dic
         elif kind == "agc":
             body = {"gain_mode": bool(value)}
         elif kind == "setting":
+            if not allow_unsafe:
+                raise Unsupported(SOAPY_SETTING_WARNING)
             # gr-soapy's handler type-tests the wrong variable, so only STRING
             # values survive; a PMT bool or number throws wrong_type.
             body = {"setting": {"key": key, "value": _as_setting_string(value)}}
@@ -61,23 +73,23 @@ def _as_setting_string(value: Any) -> str:
 
 
 def commands(dialect: str, setting: Dict[str, Any], previous: Dict[str, Any] | None = None,
-             chan: int | None = None) -> List[Tuple[str, Dict[str, Any]]]:
+             chan: int | None = None, allow_unsafe: bool = False) -> List[Tuple[str, Dict[str, Any]]]:
     """Commands for everything in `setting` that differs from `previous`."""
     out = []
     for knob, value in setting.items():
         if previous is not None and previous.get(knob) == value:
             continue
-        out.append((knob, command(dialect, knob, value, chan)))
+        out.append((knob, command(dialect, knob, value, chan, allow_unsafe)))
     return out
 
 
-def check(dialect: str, knobs) -> List[str]:
+def check(dialect: str, knobs, allow_unsafe: bool = False) -> List[str]:
     """Problems that would only show up as an exception inside someone else's
     message handler. Call before the first publish."""
     problems = []
     for k in knobs:
         try:
-            command(dialect, k, 0)
+            command(dialect, k, 0, allow_unsafe=allow_unsafe)
         except Unsupported as e:
             problems.append(str(e))
     return problems

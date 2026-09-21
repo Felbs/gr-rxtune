@@ -149,9 +149,13 @@ class SoapyFrontend:
             return True
 
     # ---- streaming: pump thread -> level looks (+ optional sink) ------------
-    def start(self, sink: Optional[BinaryIO] = None, fmt: str = "CS16", mtu: int = 65536) -> None:
+    def start(self, sink: Optional[BinaryIO] = None, fmt: str = "CS16", mtu: int = 65536,
+              transform: Optional[Callable[[np.ndarray], bytes]] = None) -> None:
         """Begin streaming. `sink` receives raw interleaved samples (attachment
-        mode a: the loop owns the SDR and feeds the decoder)."""
+        mode a: the loop owns the SDR and feeds the decoder). `transform` turns
+        each buffer (int16 interleaved for CS16, complex64 for CF32) into the
+        bytes the decoder wants: a decimator, a cu8 converter."""
+        self._transform = transform
         S = self.S
         self._fmt = fmt
         self._sink = sink
@@ -181,7 +185,8 @@ class SoapyFrontend:
             self.samples += n
             n_buf += 1
             if self._sink is not None:
-                chunk = buf[:2 * n].tobytes() if cs16 else buf[:n].tobytes()
+                view = buf[:2 * n] if cs16 else buf[:n]
+                chunk = self._transform(view) if self._transform else view.tobytes()
                 try:
                     self._sinkq.put_nowait(chunk)
                 except queue.Full:

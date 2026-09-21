@@ -159,3 +159,18 @@ def test_pipe_decoder_mode_a_scrapes_dial_and_liveness():
     vals = [sc.read() for _ in range(5)]
     assert vals == [11.5, 12.5, 10.5, 11.5, 12.5] and sc.read() is None
     assert dec.proc is None
+
+
+def test_a_dead_decoder_is_never_reported_as_an_rf_verdict():
+    """Found on hardware: a decoder that printed its usage and exited looked,
+    to the loop, exactly like NO_SIGNAL."""
+    from rxtune.loop import DecoderDied
+    sc = LineScraper(DialSpec("MER"), r"mer=([\d.]+)")
+    dec = PipeDecoder([sys.executable, "-c", "import sys; print('usage: nope', file=sys.stderr); sys.exit(2)"], sc)
+    dec.start()
+    time.sleep(1.0)
+    assert "exited with code 2" in dec.health() and "usage: nope" in dec.health()
+    rx = SimReceiver("healthy")
+    with pytest.raises(DecoderDied):
+        tune(rx, rx, rx, clock=rx.clock, fixed={"antenna": "A"}, health=dec.health)
+    dec.stop()

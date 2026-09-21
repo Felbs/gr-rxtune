@@ -1,20 +1,28 @@
-title: The RXTUNE OOT Module
-version: 1.0
-brief: Short description of gr-rxtune
-tags: # Tags are arbitrary, but look at CGRAN what other authors are using
+title: gr-rxtune
+version: 0.1.0
+brief: Receiver tuning loop - a decoder-truth dial drives a search over discovered SDR knobs; the curve's shape becomes an honest verdict
+tags:
   - sdr
+  - gain
+  - tuning
+  - calibration
+  - soapysdr
+  - receiver
 author:
-  - Author Name <authors@email.address>
+  - gr-rxtune authors
 copyright_owner:
-  - Copyright Owner 1
-license:
+  - gr-rxtune authors
+license: GPL-3.0-or-later
 gr_supported_version:
-  - 3.X
-repo: # Put the URL of the repository here
-website: # If you have a separate project website, put it here
-#icon: # Put a URL to a square image here that will be used as an icon
+  - 3.10
+repo:
+website:
 description: |-
-  A longer, multi-line description of gr-rxtune.
-  You may use some *basic* Markdown here.
-  If left empty, it will try to find a README file instead.
+  Tune a receiver by what the decoder says (MER, CNR, SNR, BER), not by signal power.
+  A pure-Python core (no GNU Radio dependency) searches runtime-discovered SoapySDR
+  knobs against any scalar quality dial, classifies the failure from the SHAPE of the
+  dial-vs-gain curve, refuses to recommend a setting without proof of decoded content,
+  and says so in dB when the limit is physical. GNU Radio blocks on top: a headless
+  controller speaking the command dialects gr-soapy and gr-uhd really accept, dial
+  probes and adapters, a message-to-setter shim, and an optional Qt dashboard.
 file_format: 1

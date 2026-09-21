@@ -8,6 +8,11 @@ from typing import Callable, Dict, List, Optional, Sequence
 from .dial import Dial, Liveness, Reading
 from .knob import Frontend, KnobSpec, KnobWriteError, Setting, apply
 from .lock import DeviceLock, NullLock, Yielded
+
+
+class DecoderDied(RuntimeError):
+    """The decoder stopped running. That is not an RF verdict and is never
+    reported as one."""
 from .measure import Clock, Measurer
 from .optimize import Axis, SearchResult, Tuner
 from .verdict import Verdict, judge
@@ -63,7 +68,8 @@ def tune(frontend: Frontend, dial: Dial, liveness: Optional[Liveness] = None, *,
          lock: Optional[DeviceLock] = None, known_bad: Optional[Callable[[Setting], bool]] = None,
          pick: str = "headroom", coarse_points: int = 5, max_cells: int = 120,
          on_cell: Optional[Callable[[Setting, Reading], None]] = None,
-         agc_off: bool = True, thresholds: Optional[dict] = None) -> TuneReport:
+         agc_off: bool = True, thresholds: Optional[dict] = None,
+         health: Optional[Callable[[], Optional[str]]] = None) -> TuneReport:
     """Search the named knobs (default: every fast gain knob the frontend has),
     holding `fixed` constant. `start` restricts a knob's COARSE span; the
     staircase rule extends it if the answer lies outside."""
@@ -99,6 +105,10 @@ def tune(frontend: Frontend, dial: Dial, liveness: Optional[Liveness] = None, *,
             failed[str(e).split(":")[0]] = failed.get(str(e).split(":")[0], 0) + 1
             settle = 0.0
         reading = measurer.measure(extra_settle_s=settle + dial.spec.settle_s, window_scale=scale)
+        if health is not None:
+            problem = health()
+            if problem:
+                raise DecoderDied(problem)
         if on_cell:
             on_cell(setting, reading)
         return reading

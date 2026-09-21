@@ -9,8 +9,11 @@
                         every grid cell. Slow calibration only."""
 from __future__ import annotations
 
+import os
 import re
+import signal
 import subprocess
+import sys
 import threading
 import time
 from typing import Callable, Dict, List, Optional, Sequence
@@ -46,8 +49,11 @@ class LineScraper:
             if self._live_re is not None:
                 lm = self._live_re.search(line)
                 if lm:
-                    # a counter in the line is taken as cumulative; otherwise each match counts one
-                    self._live = int(float(lm.group(1))) if lm.groups() else self._live + 1
+                    # a NUMERIC group is a cumulative counter; anything else counts one per match
+                    try:
+                        self._live = int(float(lm.group(1)))
+                    except (IndexError, TypeError, ValueError):
+                        self._live += 1
 
     def watch(self, stream) -> threading.Thread:
         def run():
@@ -68,6 +74,74 @@ class LineScraper:
             return self._live
 
 
+class FileGrowth:
+    """Liveness from a decoder's OUTPUT file: decoded audio, a transport stream.
+    Bytes that were actually written are content; a status line is not."""
+
+    def __init__(self, path: str, unit: int = 4096):
+        self.path, self.unit = path, unit
+
+    def count(self) -> int:
+        try:
+            return os.path.getsize(self.path) // self.unit
+        except OSError:
+            return 0
+
+
+class PatternCounter:
+    """Liveness from CONTENT inside a growing output file: counts a byte pattern
+    (an MPEG-2 sequence header, a frame sync word). File growth alone is not
+    proof - a demodulator can emit full-rate null padding forever."""
+
+    def __init__(self, path: str, pattern: bytes):
+        self.path, self.pattern = path, pattern
+        self._pos, self._count, self._tail = 0, 0, b""
+
+    def count(self) -> int:
+        try:
+            size = os.path.getsize(self.path)
+            if size < self._pos:                      # the file was recreated
+                self._pos, self._tail = 0, b""
+            with open(self.path, "rb") as f:
+                f.seek(self._pos)
+                data = f.read()
+        except OSError:
+            return self._count
+        self._pos += len(data)
+        blob = self._tail + data
+        self._count += blob.count(self.pattern)
+        keep = len(self.pattern) - 1
+        self._tail = blob[-keep:] if keep and not blob.endswith(self.pattern) else b""
+        return self._count
+
+
+def graceful_stop(proc: subprocess.Popen, grace_s: float = 8.0) -> None:
+    """Ask first. A decoder that is STREAMING FROM A RADIO must be allowed to
+    close the device itself: hard-killing a streaming process can wedge a vendor
+    driver service. On Windows that means CTRL_BREAK to a process started in its
+    own process group (use popen_group()); elsewhere SIGINT."""
+    if proc.poll() is not None:
+        return
+    try:
+        proc.send_signal(signal.CTRL_BREAK_EVENT if sys.platform == "win32" else signal.SIGINT)
+        proc.wait(timeout=grace_s)
+        return
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        pass
+    proc.terminate()                                  # last resort, and it is logged as one
+    try:
+        proc.wait(timeout=grace_s)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+
+
+def popen_group(argv, **kw) -> subprocess.Popen:
+    """Popen in its own process group, so graceful_stop() can signal it on Windows."""
+    if sys.platform == "win32":
+        kw["creationflags"] = kw.get("creationflags", 0) | subprocess.CREATE_NEW_PROCESS_GROUP
+    return subprocess.Popen(argv, **kw)
+
+
 class PipeDecoder:
     """Mode (a). Start the decoder once; hand its stdin to SoapyFrontend.start(sink=...)."""
 
@@ -83,6 +157,18 @@ class PipeDecoder:
             stderr=subprocess.PIPE if self.scrape == "stderr" else subprocess.DEVNULL)
         self.scraper.watch(self.proc.stdout if self.scrape == "stdout" else self.proc.stderr)
         return self.proc.stdin
+
+    def health(self) -> Optional[str]:
+        """None while the decoder runs; otherwise why it is not running. A dead
+        decoder reads exactly like a dead signal, so the loop asks before it
+        believes a silent dial."""
+        if self.proc is None:
+            return "decoder was never started"
+        code = self.proc.poll()
+        if code is None:
+            return None
+        tail = " | ".join(self.scraper.tail[-3:])
+        return f"decoder exited with code {code}" + (f": {tail}" if tail else "")
 
     def stop(self, grace_s: float = 6.0) -> None:
         if self.proc is None:
@@ -108,9 +194,12 @@ class RestartPerCell:
     view in this mode, so level() is None and the verdict is open-loop."""
 
     def __init__(self, specs: Sequence[KnobSpec], launch: Callable[[Setting], subprocess.Popen],
-                 scraper: LineScraper, scrape: str = "stderr", grace_s: float = 6.0):
+                 scraper: LineScraper, scrape: str = "stderr", grace_s: float = 8.0,
+                 release_s: float = 1.5):
         self._specs = {s.name: s.with_(cost="restart") for s in specs}
         self._launch, self.scraper, self._scrape, self._grace = launch, scraper, scrape, grace_s
+        self._release_s = release_s
+        self.hard_kills = 0
         self._state: Setting = {}
         self._dirty = False
         self.proc: Optional[subprocess.Popen] = None
@@ -135,10 +224,9 @@ class RestartPerCell:
     def stop(self) -> None:
         if self.proc is None:
             return
-        self.proc.terminate()
-        try:
-            self.proc.wait(timeout=self._grace)
-        except subprocess.TimeoutExpired:
-            self.proc.kill()
+        t0 = time.monotonic()
+        graceful_stop(self.proc, self._grace)
+        if time.monotonic() - t0 >= self._grace:
+            self.hard_kills += 1
         self.proc = None
-        time.sleep(1.0)                      # let the device be released before the next open
+        time.sleep(self._release_s)          # let the device be released before the next open

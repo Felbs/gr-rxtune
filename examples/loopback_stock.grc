@@ -1,0 +1,282 @@
+options:
+  parameters: {id: loopback_stock, title: rxtune radio-free loopback, author: gr-rxtune, generate_options: no_gui,
+    output_language: python, category: '[GRC Hier Blocks]', run: 'True', run_options: prompt, gen_cmake: 'On', description: Stock
+      DSP plant; rxtune finds the gain ridge from the SNR dial alone.}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [8, 8]
+    rotation: 0
+    state: enabled
+blocks:
+- name: samp_rate
+  id: variable
+  parameters: {value: '400000'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [200, 12]
+    rotation: 0
+    state: enabled
+- name: sps
+  id: variable
+  parameters: {value: '4'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [300, 12]
+    rotation: 0
+    state: enabled
+- name: qpsk
+  id: variable_constellation
+  parameters: {type: qpsk}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [400, 12]
+    rotation: 0
+    state: enabled
+- name: bits
+  id: analog_random_uniform_source_x
+  parameters: {type: byte, minimum: '0', maximum: '256', seed: '1'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [8, 120]
+    rotation: 0
+    state: enabled
+- name: mod
+  id: digital_constellation_modulator
+  parameters: {constellation: qpsk, differential: 'False', samples_per_symbol: sps, excess_bw: '0.35'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [200, 120]
+    rotation: 0
+    state: enabled
+- name: throttle
+  id: blocks_throttle2
+  parameters: {type: complex, samples_per_second: samp_rate}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [420, 120]
+    rotation: 0
+    state: enabled
+- name: antenna
+  id: blocks_multiply_const_vxx
+  parameters: {type: complex, const: '0.01', comment: weak wanted signal}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [600, 120]
+    rotation: 0
+    state: enabled
+- name: neighbour
+  id: analog_sig_source_x
+  parameters: {type: complex, samp_rate: '1', waveform: analog.GR_COS_WAVE, freq: '0.37', amp: '0.3', comment: strong
+      out-of-band neighbour}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [420, 220]
+    rotation: 0
+    state: enabled
+- name: air
+  id: blocks_add_xx
+  parameters: {type: complex, num_inputs: '2'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [780, 150]
+    rotation: 0
+    state: enabled
+- name: chan
+  id: channels_channel_model
+  parameters: {noise_voltage: '0.001', freq_offset: '0.0', epsilon: '1.0', taps: '1.0', seed: '1'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [900, 130]
+    rotation: 0
+    state: enabled
+- name: gain_blk
+  id: blocks_multiply_const_vxx
+  parameters: {type: complex, const: '1.0', comment: THE KNOB (set by rxtune)}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1100, 150]
+    rotation: 0
+    state: enabled
+- name: c2f
+  id: blocks_complex_to_float
+  parameters: {}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [8, 360]
+    rotation: 0
+    state: enabled
+- name: rail_i
+  id: analog_rail_ff
+  parameters: {lo: '-1', hi: '1'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [200, 340]
+    rotation: 0
+    state: enabled
+- name: rail_q
+  id: analog_rail_ff
+  parameters: {lo: '-1', hi: '1'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [200, 410]
+    rotation: 0
+    state: enabled
+- name: f2c
+  id: blocks_float_to_complex
+  parameters: {}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [380, 360]
+    rotation: 0
+    state: enabled
+- name: conv_noise
+  id: analog_noise_source_x
+  parameters: {type: complex, noise_type: analog.GR_GAUSSIAN, amp: '0.003', seed: '2', comment: converter noise}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [380, 450]
+    rotation: 0
+    state: enabled
+- name: adc
+  id: blocks_add_xx
+  parameters: {type: complex, num_inputs: '2'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [560, 380]
+    rotation: 0
+    state: enabled
+- name: rrc
+  id: root_raised_cosine_filter
+  parameters: {type: fir_filter_ccf, decim: '1', interp: '1', gain: '1', samp_rate: sps, sym_rate: '1', alpha: '0.35',
+    ntaps: 11*sps}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [700, 360]
+    rotation: 0
+    state: enabled
+- name: agc
+  id: analog_agc_xx
+  parameters: {type: complex, rate: 1e-3, reference: '1.0', gain: '1.0', max_gain: '65536'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [900, 360]
+    rotation: 0
+    state: enabled
+- name: sync
+  id: digital_symbol_sync_xx
+  parameters: {type: cc, ted_type: digital.TED_SIGNAL_TIMES_SLOPE_ML, constellation: qpsk.base(), sps: sps, ted_gain: '1.0',
+    loop_bw: '0.045', damping: '1.0', max_dev: '0.01', osps: '1', resamp_type: digital.IR_MMSE_8TAP, nfilters: '128',
+    pfb_mf_taps: '[]', comment: 'max_dev 0.01: a wide clock range never re-locks after an overload cell'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1080, 340]
+    rotation: 0
+    state: enabled
+- name: probe
+  id: rxtune_dial_probe
+  parameters: {estimator: m2m4, msg_nsamples: '4000', alpha: '0.2'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [8, 560]
+    rotation: 0
+    state: enabled
+- name: ctl
+  id: rxtune_controller
+  parameters: {axes: '[{"name": "gain", "lo": -20, "hi": 40, "step": 1, "sense": "gain", "settle_s": 0.1}]', dialect: generic,
+    dial_name: SNR, settle_s: '1.0', window_s: '0.8'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [260, 540]
+    rotation: 0
+    state: enabled
+- name: setter
+  id: rxtune_msg_setter
+  parameters: {target: gain_blk, setters: '{"gain": lambda blk, db: blk.set_k(10.0 ** (float(db) / 20.0))}', getters: '{"gain":
+      lambda blk: round(20.0 * __import__("math").log10(abs(blk.k())), 6)}'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [560, 560]
+    rotation: 0
+    state: enabled
+- name: debug
+  id: blocks_message_debug
+  parameters: {en_uvec: 'True'}
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [860, 640]
+    rotation: 0
+    state: enabled
+connections:
+- [bits, '0', mod, '0']
+- [mod, '0', throttle, '0']
+- [throttle, '0', antenna, '0']
+- [antenna, '0', air, '0']
+- [neighbour, '0', air, '1']
+- [air, '0', chan, '0']
+- [chan, '0', gain_blk, '0']
+- [gain_blk, '0', c2f, '0']
+- [c2f, '0', rail_i, '0']
+- [c2f, '1', rail_q, '0']
+- [rail_i, '0', f2c, '0']
+- [rail_q, '0', f2c, '1']
+- [f2c, '0', adc, '0']
+- [conv_noise, '0', adc, '1']
+- [adc, '0', rrc, '0']
+- [rrc, '0', agc, '0']
+- [agc, '0', sync, '0']
+- [sync, '0', probe, '0']
+- [probe, dial, ctl, dial]
+- [ctl, cmd, setter, cmd]
+- [setter, readback, ctl, readback]
+- [ctl, verdict, debug, print]
+metadata: {file_format: 1, grc_version: 3.10.12.0}
