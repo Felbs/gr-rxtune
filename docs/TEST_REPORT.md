@@ -13,19 +13,21 @@ How to repeat everything is at the end.
 
 | Area | Result |
 |---|---|
-| Core library, no radio (pytest) | **118 passed**, 0 failed |
+| Core library, no radio (pytest) | **124 passed**, 0 failed |
 | `rxtune selftest` | **13 / 13 gates PASS** |
-| GNU Radio block QA (8 files) | **20 passed**, 0 failed |
+| GNU Radio block QA (9 files) | **22 passed**, 0 failed |
 | Closed loop over stock DSP, headless, no Qt | **PASS** |
 | GRC examples compile (`grcc`) | **2 / 2** |
 | Qt flowgraph beside stock gr-qtgui widgets | **8 / 8 checks PASS**, offscreen and on a real display |
 | Source-block command compatibility | gr-soapy **tested on hardware**; gr-osmosdr tested on the real block (file source); gr-uhd **not testable here** |
 | Hardware: FM HD (NRSC-5), attachment mode (a) | **PASS** on the third run — HEALTHY, decoding, agrees with an independent prior calibration (runs 1-2 found 3 defects) |
 | Hardware: ATSC 1.0, attachment mode (c) | **PASS** — HEALTHY, +2.9 dB, decoding. Graceful decoder stop FAILED 16 / 27 in the first run; fixed; re-test 0 / 7 |
+| Hardware: ATSC 3.0 (library AND in a GRC flowgraph), port survey, TV in a GNU Radio window | **PASS** - see 6b |
+| Hardware: ADS-B (blind dial) | **INCONCLUSIVE** - too little night traffic; to be repeated |
 | CMake install | **NOT RUN** (no cmake on this machine) |
 | Linux / Raspberry Pi | **NOT RUN** |
 
-Thirteen defects were found by this testing and fixed; three defects were found in
+Twenty defects were found by this testing and fixed; three defects were found in
 *other people's* blocks and are written up in §8.
 
 ## 1. Core library (`pytest`, 118 tests, ~4 s)
@@ -228,6 +230,49 @@ searched (the FM run had already shown states beyond that to be deaf on this rad
 - Mode (c) has no sample view, so there is no level and no rail count: the run is now
   labelled **open-loop** (it was mislabelled closed-loop during the run; defect 13).
 
+## 6b. Second hardware campaign (night of 2026-09-20/21): ATSC 3.0, port survey, ADS-B
+
+A third attachment flavour was built for this: **capture per cell** (`attach.CaptureMeasurer`,
+and the GNU Radio **Capture Dial** block). rxtune owns the radio, records a few seconds at
+each setting, and the decoder's own OFFLINE tools judge the file - two at once: a continuous
+dial, and an actual decode as liveness. The ATSC 3.0 receiver used is an external
+pure-Python project that was not modified; rxtune only runs its commands.
+
+| Run | Result |
+|---|---|
+| ATSC 3.0, strong UHF carrier, library, blind full-span grid (LNA 0-27 x IF 20-59) | **HEALTHY, 23.2 dB SNR, 3034/3034 LDPC blocks BCH-clean.** Pick within ONE LNA state of the receiver project's own hand-measured, independently stored answer. 35 cells, stream 1.000, 0 void captures. |
+| same carrier, **inside a GRC flowgraph** (`examples/atsc3_live.grc`): Soapy source + stock frequency / waterfall sinks + Capture Dial + Controller (`soapy` dialect) + Dashboard | **HEALTHY, decoding**, 22 cells, 695 s. Every gain write went to the Soapy source **by message, per element**, and the raw level followed each one. Screenshots: `docs/img/atsc3_live_*.png`. |
+| the curve finds the cliff | With no threshold given, steady cells at 14.65 dB did not decode and 16.9 dB did: the verdict now reports an *observed decode threshold* and the margin over it. The receiver project's own notes put this carrier's cliff at about 15 dB. |
+| ATSC 3.0, weak LDM carrier, two different TV antennas | **NO_SIGNAL** on both: the receiver locks the frame structure (FEC blocks are found) but not one block decodes at any gain, and no SNR can be read. Reported as such; nothing recommended. |
+| ATSC 3.0, VHF-high carrier on a wideband discone | Best cell 7.6 dB SNR, nothing decodes. First run called this `PLUMBING` - **wrong** (defect 17); now `BELOW_CLIFF`. Still useful: the receiver project had no measured gain for this carrier at all. |
+| **Port survey on hardware** (stage 3+4), three ports, one carrier | UHF antenna 22.8 dB, second TV antenna 22.3 dB, discone NO_SIGNAL at UHF; picked the first and tuned it to 23.1 dB, decoding. |
+| **TV inside a GNU Radio window** (`examples/hw_atsc3_tv_window.py`) | **Worked first try.** GNU Radio owns the radio, streams IQ to a growing file, the external receiver decodes it in real time, and the player renders INTO a pane of the flowgraph window; gain from the rxtune verdict. 110 s, 6.1 GB streamed. (Screenshot kept out of the repository: broadcast content.) |
+| **ADS-B at 1090 MHz: the first BLIND dial on hardware** | **INCONCLUSIVE, and says so.** 2 CRC-valid messages in 22 cells at 1 a.m.: Poisson noise, not a ranking. The verdict now refuses to rank on fewer than 200 decoded messages (defect 19). Head-to-head vs maximum gain and hardware AGC: 0.0 / 0.0 / 0.0 msgs/s. To be repeated with daytime traffic. |
+
+**What failed on the way, and why it matters**
+- *My pipe into dump1090 read zero messages while another decoder heard three aircraft on the same
+  antenna.* Cause: converting 16-bit samples to the customary unsigned 8-bit format. At a realistic
+  -56 dBFS a Mode S pulse is under ONE LSB of 8 bits. (And the only dump1090 build to hand
+  segfaulted on 16-bit file input.) Lesson, now in the docs: feed decoders the radio's native width.
+- *The first three GRC hardware runs produced nothing.* (1) GRC-generated code did
+  `import rxtune.recipes`, rebinding the name `rxtune`, which was already the GNU Radio module;
+  (2) a relative capture path, judged by subprocesses with another working directory;
+  (3) **the capture block could not keep up**: converting every sample in Python at 6.9 MS/s made the
+  Soapy source overflow, and the file was garbage *of exactly the right length* because I had counted
+  samples, not time - a violation of this project's own capture-integrity rule. Now: raw cf32, a
+  decimated level look, and any capture with samples != wall x fs is VOID.
+- *Port-survey mode hard-crashed the process* (no traceback) and left the device "unavailable" for
+  minutes, killing the next two runs: the interferer census opened a SECOND stream while one was
+  running. The frontend now refuses.
+- *A pick that did not reproduce.* Bursty interference (5-7 dB p10..p90 in some cells) made a cell read
+  ~21 dB once and 16.2 dB on confirmation, beside neighbours holding 22. The search now re-picks when
+  a confirmation falls short, and prefers steady cells among ties.
+- *The site lock was released under a running stream*: a script held the lock, passed it to `tune()`,
+  and `tune()`'s exit released it. The adapter is now re-entrant.
+
+Not done: the bias-T / hot-LNA case (no LNA was inline; DC was not put on a passive antenna).
+Overnight recalibration results: see the end of this section once the run completes.
+
 ## 7. Defects found by this testing, all fixed
 
 1. Pattern search compared against a falsy `0.0` score.
@@ -249,6 +294,14 @@ searched (the FM run had already shown states beyond that to be deaf on this rad
     cell that did decode exists; it stays in the curve as evidence.
 13. Restart-per-cell mode echoed its own requests back as "readback" and so called
     itself closed-loop.
+14. "Island" was judged on the width of the near-best region; a sharp peak with 9 dB of margin is
+    not fragile. With a known cliff it is now the span that clears the cliff.
+15. The site-lock adapter was not re-entrant (released the radio under a running stream).
+16. The interferer census opened a second stream on a streaming device (hard crash).
+17. `PLUMBING` was claimed with no known cliff; it needs evidence that the dial is ABOVE threshold.
+18. A pick whose confirmation did not reproduce was allowed to stand.
+19. A message-rate dial ranked settings on two messages; now needs 200.
+20. The GNU Radio capture block converted every sample in Python and dropped samples silently.
 
 Also caught in the test harness itself: a rate probe goes *stale*, not to zero,
 when its upstream dies (so it cannot detect a stopped source — count items

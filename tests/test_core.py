@@ -376,3 +376,19 @@ def test_plumbing_is_never_claimed_without_a_known_cliff():
     t = Tuner([axis], spec, confirm=False)
     v = judge(t.run(measure), spec, t.gain_of)
     assert v.shape is Shape.BELOW_CLIFF and not v.ok
+
+
+def test_one_failed_knob_does_not_stop_the_others_being_written():
+    from rxtune.knob import apply
+    box = {"ant": "A", "g": 0}
+
+    class FE:
+        def knobs(self):
+            return {"antenna": FunctionKnob(KnobSpec("antenna", "choice", choices=("A", "B")),
+                                            lambda v: None, lambda: box["ant"]),          # ignores writes
+                    "g": FunctionKnob(KnobSpec("g", "range", 0, 9, 1), lambda v: box.update(g=v),
+                                      lambda: box["g"])}
+    with pytest.raises(KnobWriteError) as e:
+        apply(FE(), {"antenna": "B", "g": 7})
+    assert box["g"] == 7, "the gain knob must still have been written"
+    assert "antenna" in str(e.value)

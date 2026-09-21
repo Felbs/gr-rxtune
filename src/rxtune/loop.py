@@ -106,8 +106,9 @@ def tune(frontend: Frontend, dial: Dial, liveness: Optional[Liveness] = None, *,
         try:
             settle = apply(frontend, {**(fixed or {}), **setting}, current)
         except KnobWriteError as e:
-            failed[str(e).split(":")[0]] = failed.get(str(e).split(":")[0], 0) + 1
-            settle = 0.0
+            for part in str(e).split("; "):
+                failed[part.split(":")[0]] = failed.get(part.split(":")[0], 0) + 1
+            settle = getattr(e, "settle_s", 0.0)
         reading = measurer.measure(extra_settle_s=settle + dial.spec.settle_s, window_scale=scale)
         if health is not None:
             problem = health()

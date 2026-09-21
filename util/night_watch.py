@@ -60,11 +60,17 @@ def main():
     ap.add_argument("--every", type=float, default=40.0, help="minutes between rounds")
     ap.add_argument("--out", default="runs/night")
     ap.add_argument("--target", action="append", default=[], help="a tuning command (quoted)")
+    ap.add_argument("--targets-file", help="JSON: a list of argv lists. No shell quoting to get wrong "
+                                           "(an antenna port called \"Antenna A\" will find a way).")
     ap.add_argument("--report", metavar="DIR")
     a, rest = ap.parse_known_args()
     if a.report:
         return report(a.report)
-    targets = [shlex.split(t, posix=False) for t in a.target]
+    # posix=True so that quotes GROUP and are removed ("Antenna A" stays one argument);
+    # use forward slashes in paths, since a backslash is an escape here
+    targets = [shlex.split(t, posix=True) for t in a.target]
+    if a.targets_file:
+        targets += json.load(open(a.targets_file, encoding="utf-8"))
     if rest and rest[0] == "--":
         targets.append(rest[1:])
     if not targets:

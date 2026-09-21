@@ -108,14 +108,26 @@ def apply(frontend: Frontend, setting: Setting, current: Optional[Setting] = Non
     """Write only what changed; return the longest settle time incurred."""
     knobs = frontend.knobs()
     settle = 0.0
+    failures = []
     for name, value in setting.items():
         if current is not None and current.get(name) == value:
             continue
         knob = knobs[name]
-        knob.set(value)
+        try:
+            knob.set(value)
+        except KnobWriteError as e:
+            # ONE bad knob must not stop the others being written. (Found on hardware: a
+            # mangled antenna name failed its readback first, the gain knobs were then
+            # never written, and a whole night would have been measured at one gain.)
+            failures.append(str(e))
+            continue
         settle = max(settle, knob.spec.settle_s)
         if current is not None:
             current[name] = value
+    if failures:
+        err = KnobWriteError("; ".join(failures))
+        err.settle_s = settle
+        raise err
     return settle
 
 
