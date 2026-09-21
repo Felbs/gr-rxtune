@@ -1,0 +1,143 @@
+id: rxtune_controller
+label: rxtune Controller
+category: '[rxtune]'
+flags: [python]
+
+documentation: |-
+  Headless tuning loop. Dial messages in; one command dict per knob write out.
+
+  Axes: a list of dicts, one per knob to search, e.g.
+    [{"name": "gain:RFGR", "lo": 0, "hi": 27, "step": 1, "sense": "reduction"},
+     {"name": "gain:IFGR", "lo": 20, "hi": 59, "step": 1, "sense": "reduction"}]
+  or {"name": "gain:TUNER", "choices": [0.0, 0.9, 1.4]} for a discrete table.
+
+  Dialect: what the block on the other end of 'cmd' understands.
+    soapy   - Soapy source 'cmd' port. Per-element gain, antenna, freq, settings.
+    uhd     - USRP source 'command' port. OVERALL gain only (named elements: use Message Setter).
+    generic - {knob, value}: for the Message Setter block (the osmocom source has no message port).
+
+  Message mode is open-loop: no source block reports a value back. Wire a Message
+  Setter's 'readback' in for closed-loop knob writes.
+
+  A verdict never recommends a setting unless 'liveness' proves content was decoded.
+
+templates:
+  imports: from gnuradio import rxtune
+  make: |-
+    rxtune.controller(axes=${axes}, dial_name=${dial_name}, units=${units}, cliff=${cliff},
+        higher_is_better=${higher_is_better}, settle_s=${settle_s}, window_s=${window_s},
+        continuous_below_cliff=${continuous}, min_samples=${min_samples}, dialect=${dialect},
+        autostart=${autostart}, pick=${pick}, coarse_points=${coarse_points},
+        max_cells=${max_cells}, fixed=${fixed}, auto_recal=${auto_recal}, sag=${sag})
+
+parameters:
+- id: axes
+  label: Axes
+  dtype: raw
+  default: '[{"name": "gain", "lo": 0, "hi": 40, "step": 2, "sense": "gain"}]'
+- id: fixed
+  label: Fixed settings
+  dtype: raw
+  default: '{}'
+  hide: part
+- id: dialect
+  label: Command dialect
+  dtype: string
+  default: soapy
+  options: [soapy, uhd, generic]
+- id: dial_name
+  label: Dial name
+  dtype: string
+  default: SNR
+- id: units
+  label: Dial units
+  dtype: string
+  default: dB
+  hide: part
+- id: cliff
+  label: Decode cliff
+  dtype: raw
+  default: 'None'
+- id: higher_is_better
+  label: Higher is better
+  dtype: bool
+  default: 'True'
+  hide: part
+- id: continuous
+  label: Continuous below cliff
+  dtype: bool
+  default: 'True'
+  hide: part
+- id: settle_s
+  label: Settle (s)
+  dtype: real
+  default: '0.5'
+- id: window_s
+  label: Window (s)
+  dtype: real
+  default: '1.0'
+- id: min_samples
+  label: Min dial samples
+  dtype: int
+  default: '5'
+  hide: part
+- id: pick
+  label: Pick policy
+  dtype: string
+  default: headroom
+  options: [headroom, knee, max]
+  hide: part
+- id: coarse_points
+  label: Coarse points per axis
+  dtype: int
+  default: '5'
+  hide: part
+- id: max_cells
+  label: Cell budget
+  dtype: int
+  default: '120'
+  hide: part
+- id: autostart
+  label: Start with flowgraph
+  dtype: bool
+  default: 'True'
+  hide: part
+- id: auto_recal
+  label: Recalibrate on dial sag
+  dtype: bool
+  default: 'False'
+  hide: part
+- id: sag
+  label: Sag threshold
+  dtype: real
+  default: '1.5'
+  hide: part
+
+inputs:
+- domain: message
+  id: dial
+- domain: message
+  id: liveness
+  optional: true
+- domain: message
+  id: level
+  optional: true
+- domain: message
+  id: readback
+  optional: true
+- domain: message
+  id: ctrl
+  optional: true
+
+outputs:
+- domain: message
+  id: cmd
+  optional: true
+- domain: message
+  id: status
+  optional: true
+- domain: message
+  id: verdict
+  optional: true
+
+file_format: 1

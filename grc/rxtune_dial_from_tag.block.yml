@@ -1,0 +1,38 @@
+id: rxtune_dial_from_tag
+label: rxtune Dial From Tag
+category: '[rxtune]'
+flags: [python]
+
+documentation: |-
+  Turns a numeric stream tag (for example the "snr" tag from MPSK SNR Estimator)
+  into a dial message.
+
+templates:
+  imports: from gnuradio import rxtune
+  make: rxtune.dial_from_tag(type=${type}, key=${key}, every=${every})
+
+parameters:
+- id: type
+  label: Input type
+  dtype: enum
+  default: complex
+  options: [complex, float, byte, short]
+  hide: part
+- id: key
+  label: Tag key
+  dtype: string
+  default: snr
+- id: every
+  label: Publish every Nth tag
+  dtype: int
+  default: '1'
+
+inputs:
+- domain: stream
+  dtype: ${ type }
+
+outputs:
+- domain: message
+  id: dial
+
+file_format: 1

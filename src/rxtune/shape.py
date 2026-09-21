@@ -123,9 +123,11 @@ def classify(result: SearchResult, spec: DialSpec, gain_of: Callable[[Point], fl
              and (hot(p) >= th["clip_high"] or not have_level)]
     silent_hot = [p for p in pts if p.score is None and hot(p) >= th["clip_high"]]
     if ridge or silent_hot:
-        edge = min([gain_of(p) for p in ridge + silent_hot])
-        ev["overload_ridge_at"] = edge
-        notes.append(f"overload ridge: the dial collapses above a raw level of about {edge:.0f} dBFS")
+        first = min(ridge + silent_hot, key=gain_of)
+        ev["overload_ridge_at"] = gain_of(first)
+        where = (f"above a raw level of about {gain_of(first):.0f} dBFS" if have_level
+                 else f"from {first.setting} upward")      # no sample view: name the setting
+        notes.append(f"overload ridge: the dial collapses {where}")
 
     # width of the good region around the best, in gain dB
     near = [p for p in scored if top - p.score <= th["island_within"]]

@@ -1,0 +1,42 @@
+id: rxtune_dial_probe
+label: rxtune Dial Probe (M-PSK SNR)
+category: '[rxtune]'
+flags: [python]
+
+documentation: |-
+  Stream in, dial message out, using the stock M-PSK SNR estimator. Valid on
+  symbol-rate M-PSK samples only. Lets an example loop run with no custom decoder.
+
+  Alpha is the estimator's averaging, applied per scheduler buffer. It is part of the
+  dial's settle time: keep the controller's Settle longer than the estimator's memory.
+
+templates:
+  imports: from gnuradio import rxtune
+  make: rxtune.dial_probe(estimator=${estimator}, msg_nsamples=${msg_nsamples}, alpha=${alpha})
+  callbacks:
+  - set_msg_nsample(${msg_nsamples})
+
+parameters:
+- id: estimator
+  label: Estimator
+  dtype: string
+  default: m2m4
+  options: [simple, skew, m2m4, svr]
+- id: msg_nsamples
+  label: Samples per message
+  dtype: int
+  default: '10000'
+- id: alpha
+  label: Alpha
+  dtype: real
+  default: '0.1'
+
+inputs:
+- domain: stream
+  dtype: complex
+
+outputs:
+- domain: message
+  id: dial
+
+file_format: 1

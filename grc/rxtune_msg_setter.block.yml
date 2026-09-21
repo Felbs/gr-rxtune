@@ -1,0 +1,41 @@
+id: rxtune_msg_setter
+label: rxtune Message Setter
+category: '[rxtune]'
+flags: [python]
+
+documentation: |-
+  Command message in; setter METHOD call on another block. For blocks that cannot
+  be commanded by message: the osmocom source (it has no message port), USRP named
+  gain elements, Channel Model, a Multiply Const standing in for a gain stage.
+
+  Target: the id of the block. Setters / Getters: {knob: "method"} or
+  {knob: lambda blk, v: ...}. With a getter, every write is read back and reported.
+
+templates:
+  imports: from gnuradio import rxtune
+  make: rxtune.msg_setter(target=self.${target}, setters=${setters}, getters=${getters})
+
+parameters:
+- id: target
+  label: Target block id
+  dtype: id
+- id: setters
+  label: Setters
+  dtype: raw
+  default: '{"gain": "set_k"}'
+- id: getters
+  label: Getters
+  dtype: raw
+  default: '{}'
+  hide: part
+
+inputs:
+- domain: message
+  id: cmd
+
+outputs:
+- domain: message
+  id: readback
+  optional: true
+
+file_format: 1

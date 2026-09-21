@@ -1,0 +1,32 @@
+id: rxtune_dial_adapter
+label: rxtune Dial Adapter
+category: '[rxtune]'
+flags: [python]
+
+documentation: |-
+  A decoder's own telemetry (a number or a line of its log) in; a dial out.
+    atsc_fs_err_rms  8-VSB equaliser training error -> MER dB = 20*log10(5/rms), cliff 15.2
+    nrsc5_mer        "MER: a dB (lower), b dB (upper)" -> the worse sideband
+    nrsc5_ber        "BER: x, avg: ..." -> x (lower is better)
+    identity         pass a number through
+
+templates:
+  imports: from gnuradio import rxtune
+  make: rxtune.dial_adapter(mode=${mode})
+
+parameters:
+- id: mode
+  label: Mode
+  dtype: string
+  default: identity
+  options: [identity, atsc_fs_err_rms, nrsc5_mer, nrsc5_ber]
+
+inputs:
+- domain: message
+  id: in
+
+outputs:
+- domain: message
+  id: dial
+
+file_format: 1

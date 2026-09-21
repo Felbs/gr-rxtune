@@ -1,0 +1,57 @@
+id: rxtune_dashboard
+label: rxtune Dashboard
+category: '[rxtune]'
+flags: [python]
+
+documentation: |-
+  Live dial, gain-grid heatmap and verdict text. Optional: the controller runs
+  without it. Docks like any QT GUI widget (GUI Hint).
+
+templates:
+  imports: from gnuradio import rxtune
+  make: |-
+    <%
+        win = '_%s_win' % id
+    %>\
+    ${win} = rxtune.dashboard(label=${label}, units=${units}, cliff=${cliff}, dial_min=${dial_min}, dial_max=${dial_max}, parent=self)
+    self.${id} = ${win}
+    ${gui_hint() % win}
+
+parameters:
+- id: label
+  label: Label
+  dtype: string
+  default: rxtune
+- id: units
+  label: Units
+  dtype: string
+  default: dB
+- id: cliff
+  label: Decode cliff
+  dtype: raw
+  default: 'None'
+- id: dial_min
+  label: Dial min
+  dtype: real
+  default: '0'
+- id: dial_max
+  label: Dial max
+  dtype: real
+  default: '30'
+- id: gui_hint
+  label: GUI Hint
+  dtype: gui_hint
+  hide: part
+
+inputs:
+- domain: message
+  id: dial
+  optional: true
+- domain: message
+  id: status
+  optional: true
+- domain: message
+  id: verdict
+  optional: true
+
+file_format: 1
