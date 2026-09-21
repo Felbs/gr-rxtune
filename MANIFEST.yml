@@ -15,7 +15,7 @@ copyright_owner:
 license: GPL-3.0-or-later
 gr_supported_version:
   - 3.10
-repo:
+repo: https://github.com/Felbs/gr-rxtune
 website:
 description: |-
   Tune a receiver by what the decoder says (MER, CNR, SNR, BER), not by signal power.

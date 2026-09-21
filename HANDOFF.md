@@ -1,11 +1,12 @@
-# gr-rxtune handoff — 2026-09-21 (branch `main`, local only, never pushed)
+# gr-rxtune handoff — 2026-09-21 (branch `main`, published at github.com/Felbs/gr-rxtune)
 
 Standalone receiver tuning loop: a decoder-truth dial drives a search over
 runtime-discovered SDR knobs, and the curve's shape becomes an honest verdict.
 Extracted in spirit from two existing receiver projects, neither of which was
 modified. State: **0.1.0 built and tested** — core, GNU Radio blocks, GRC
-examples, hardware runs. **No GitHub repository exists and nothing has been
-pushed; both need the owner's explicit word.**
+examples, hardware runs. Published 2026-09-21 on the owner's instruction.
+**Every push runs the dox gate on the exact commits first. Upstream bug reports
+are drafted in docs/UPSTREAM_REPORTS.md and NOT filed; filing is the owner's call.**
 
 ## Read first
 1. `README.md` — what it is, the method, the blocks, credits; `docs/WALKTHROUGH.md` — follow along in GRC, with screenshots
@@ -38,7 +39,8 @@ GRC needs `GRC_BLOCKS_PATH=<repo>/grc`.
    than once; write files with an editor/tool instead.
 
 ## Rules for whoever continues
-- No GitHub repo, no push, no upstream bug filing without the owner's explicit word.
+- No upstream bug filing, no release tag, no CGRAN/conda submission without the owner's explicit word.
+- Dox gate before EVERY push, on the exact commits.
 - No station data, frequencies, locations, call signs or personal info in the tree.
   Run logs go to `runs/` (git-ignored). Scan before any future push.
 - `src/rxtune` must import with no GNU Radio and no SoapySDR (a test enforces it).
