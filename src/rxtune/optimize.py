@@ -78,7 +78,10 @@ def pick_headroom(points: List[Point], spec: DialSpec, gain_of) -> Point:
     # the way up from its bottom
     gains = sorted(gain_of(p) for p in near)
     target = gains[0] + (gains[-1] - gains[0]) / 3.0
-    return min(near, key=lambda p: (abs(gain_of(p) - target), -p.score))
+    # among ties, a STEADY cell beats a bursty one ("the dips are the disease")
+    calm = min(p.reading.spread for p in near)
+    steady = [p for p in near if p.reading.spread <= calm + 1.0] or near
+    return min(steady, key=lambda p: (abs(gain_of(p) - target), -p.score))
 
 
 def pick_knee(points: List[Point], spec: DialSpec, gain_of, within: float = 1.0) -> Point:
@@ -290,16 +293,36 @@ class Tuner:
                 self.result.log.append(
                     f"ignored {dead_top.setting}: best dial of the run "
                     f"({dead_top.reading.value:.2f} {self.spec.units}) but nothing decoded there")
-        best = PICKERS[self.pick](proven or scored, self.spec, self.gain_of)
-        self.result.log.append(f"pick[{self.pick}] -> {best.setting} "
-                               f"({best.reading.value:.2f} {self.spec.units})")
-        if self.confirm:
+        # A pick that does not REPRODUCE is not a pick. (Seen on hardware: a bursty
+        # neighbour made a cell read 21 dB once and 16 dB on confirmation, beside cells
+        # that held 22.) Confirm with a longer look; if the confirmation falls well short
+        # of what else is on offer, that cell keeps its worse reading and we pick again.
+        pool = list(proven or scored)
+        best = None
+        for attempt in range(3 if self.confirm else 1):
+            best = PICKERS[self.pick](pool, self.spec, self.gain_of)
+            self.result.log.append(f"pick[{self.pick}] -> {best.setting} "
+                                   f"({best.reading.value:.2f} {self.spec.units})")
+            if not self.confirm:
+                break
             reading = yield {**best.setting, "__window_scale__": 2.0}
-            if reading.score is not None:
-                best = Point(best.cell, best.setting, reading, "confirm", "2x window on the pick")
-                self.result.points.append(best)
-                self.result.log.append(f"[confirm] {best.setting} -> {reading.value:.2f} "
-                                       f"{self.spec.units} p10..p90 {reading.p10:.2f}..{reading.p90:.2f}")
+            if reading.score is None:
+                break
+            confirmed = Point(best.cell, best.setting, reading, "confirm", "2x window on the pick")
+            self.result.points.append(confirmed)
+            self.result.log.append(f"[confirm] {best.setting} -> {reading.value:.2f} "
+                                   f"{self.spec.units} p10..p90 {reading.p10:.2f}..{reading.p90:.2f}")
+            others = [p.score for p in pool if p.cell != best.cell]
+            shortfall = (max(others) - reading.score) if others else 0.0
+            dead = proven and reading.alive is False
+            if attempt < 2 and others and (dead or shortfall > max(1.5, 5 * self.spec.resolution)):
+                self.result.log.append(
+                    f"confirmation did not reproduce ({shortfall:+.1f} {self.spec.units} behind the "
+                    f"next best{', and nothing decoded' if dead else ''}) -> picking again")
+                pool = [p for p in pool if p.cell != best.cell] + ([] if dead else [confirmed])
+                continue
+            best = confirmed
+            break
         self.result.best = best
 
     def _distinct_seeds(self, coarse: List[List[int]]) -> List[Point]:

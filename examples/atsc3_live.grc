@@ -62,7 +62,7 @@ blocks:
     state: enabled
 - name: judges
   id: variable
-  parameters: {value: 'rxtune.recipes.atsc3(receiver_dir, py)', comment: '(score, prove): the receiver''s own tools'}
+  parameters: {value: 'rxtune_recipes.atsc3(receiver_dir, py)', comment: '(score, prove): the receiver''s own tools'}
   states:
     bus_sink: false
     bus_source: false
@@ -72,7 +72,7 @@ blocks:
     state: enabled
 - name: import_recipes
   id: import
-  parameters: {imports: import rxtune.recipes}
+  parameters: {imports: from rxtune import recipes as rxtune_recipes}
   states:
     bus_sink: false
     bus_source: false
@@ -134,7 +134,7 @@ blocks:
     state: enabled
 - name: capture
   id: rxtune_capture_dial
-  parameters: {samp_rate: samp_rate, secs: '5.0', settle_s: '1.0', path: rxtune_capture.cs16, score: 'judges[0]',
+  parameters: {samp_rate: samp_rate, secs: '5.0', settle_s: '1.0', path: rxtune_capture.cf32, score: 'judges[0]',
     prove: 'judges[1]', comment: record 5 s per cell; SNR off the dummy cells + a real decode}
   states:
     bus_sink: false

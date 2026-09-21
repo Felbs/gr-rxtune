@@ -320,3 +320,45 @@ def test_a_cell_that_did_not_decode_cannot_win():
     from rxtune.verdict import judge
     v = judge(res, spec, t.gain_of)
     assert v.shape is Shape.HEALTHY and v.ok
+
+
+def test_the_curve_brackets_an_unknown_decode_threshold():
+    """From the ATSC 3.0 hardware run: 14.65 dB did not decode, 16.9 dB did."""
+    from rxtune.dial import Reading
+    from rxtune.verdict import judge
+    spec = DialSpec("SNR", cliff=None, settle_s=0, window_s=1)
+    axis = Axis.of(KnobSpec("g", "range", 0, 5, 1, sense="gain"))
+    rows = {0: (9.9, 0.2, False), 1: (14.65, 0.45, False), 2: (14.45, 7.0, True),   # bursty: ignored
+            3: (16.9, 0.4, True), 4: (22.9, 0.1, True), 5: (None, 0.0, False)}
+
+    def measure(setting):
+        v, spread, alive = rows[setting["g"]]
+        return Reading(value=v, score=v, n=19, p10=None if v is None else v - spread / 2,
+                       p90=None if v is None else v + spread / 2, alive=alive)
+    t = Tuner([axis], spec, confirm=False)
+    v = judge(t.run(measure), spec, t.gain_of)
+    assert v.evidence["observed_cliff_lo"] == 14.65 and v.evidence["observed_cliff_hi"] == 16.9
+    assert any("observed decode threshold" in n and "+7.1" in n for n in v.notes), v.notes
+
+
+def test_a_pick_that_does_not_reproduce_is_replaced():
+    """From the ATSC 3.0 GNU Radio run: a bursty cell read high once, low on confirmation."""
+    from rxtune.dial import Reading
+    spec = DialSpec("SNR", settle_s=0, window_s=1)
+    axis = Axis.of(KnobSpec("g", "range", 0, 4, 1, sense="gain"))
+    looks = {}
+
+    def measure(setting):
+        g = setting["g"]
+        looks[g] = looks.get(g, 0) + 1
+        v = {0: 10.0, 1: 21.9, 2: 22.0, 3: 12.0, 4: 8.0}[g]
+        if g == 1 and looks[g] == 1:
+            v = 22.6                                   # the lucky first look
+        if g == 1 and looks[g] > 1:
+            v = 16.0                                   # ...that does not reproduce
+        return Reading(value=v, score=v, n=20, p10=v - 0.1, p90=v + 0.1, alive=True, level_db=-40.0 + 5 * g)
+    t = Tuner([axis], spec, pick="max")
+    res = t.run(measure)
+    assert res.best.setting["g"] == 2, res.log
+    assert any("did not reproduce" in line for line in res.log)
+    assert res.best.phase == "confirm" and res.best.score == 22.0

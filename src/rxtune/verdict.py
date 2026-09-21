@@ -85,6 +85,23 @@ class Verdict:
         return "\n".join(lines)
 
 
+def observed_cliff(result: SearchResult, spec: DialSpec, max_spread: float = 1.5):
+    """When the decoder's threshold is not known but every cell carries proof of
+    decoding, the curve itself brackets it: the best STEADY cell that did not decode
+    and the worst steady cell that did. Unsteady cells are excluded - a median taken
+    across bursts says little about where the cliff is."""
+    if spec.cliff is not None:
+        return None
+    steady = [p for p in result.points if p.score is not None and p.reading.spread <= max_spread
+              and p.reading.alive is not None and not (p.reading.overload == p.reading.overload
+                                                       and p.reading.overload >= 0.3)]
+    dead = [p.score for p in steady if p.reading.alive is False]
+    live = [p.score for p in steady if p.reading.alive is True]
+    if not dead or not live or max(dead) >= min(live):
+        return None
+    return max(dead), min(live)
+
+
 RECOMMENDABLE = {Shape.HEALTHY, Shape.ISLAND, Shape.IMPULSE, Shape.FADING}
 
 
@@ -112,6 +129,13 @@ def judge(result: SearchResult, spec: DialSpec, gain_of: Callable[[Point], float
         headline = f"{spec.name} {dial:.1f} {u}, {-margin:.1f} {u} short of the cliff"
     if rep.shape in PHYSICAL and not recommend:
         headline += " - this is physical"
+
+    learned = observed_cliff(result, spec)
+    if learned is not None and b is not None and b.score is not None:
+        lo, hi = learned
+        rep.evidence["observed_cliff_lo"], rep.evidence["observed_cliff_hi"] = lo, hi
+        rep.notes.append(f"observed decode threshold: between {lo:.1f} and {hi:.1f} {u} (steady cells "
+                         f"that did not / did decode) -> about {b.score - (lo + hi) / 2:+.1f} {u} of margin")
 
     confidence = "closed-loop" if closed_loop else "open-loop (knob writes not read back)"
     if b is not None and b.n < 2 * spec.min_samples:

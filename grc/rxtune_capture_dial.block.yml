@@ -6,25 +6,28 @@ flags: [python]
 documentation: |-
   For decoders whose honest quality number only exists offline. At the start of
   every controller cell it waits for the setting to settle, records a few seconds
-  of the stream to a file (interleaved int16 IQ), and hands the file to two
+  of the stream to a file (.cf32 = raw complex float, the cheap path; any other
+  extension = interleaved int16, which costs a conversion per sample and may not keep
+  up with a fast radio), and hands the file to two
   callables:
 
     Score  path -> {"value", "p10", "p90", "n"} or None      the dial
     Prove  path -> {"alive", "count", "note"}                 proof of decoded content
 
   then publishes liveness and a dial message that closes the cell at once.
-  rxtune.recipes has ready-made pairs, e.g.
-    Score: rxtune.recipes.atsc3(receiver_dir, python)[0]
-    Prove: rxtune.recipes.atsc3(receiver_dir, python)[1]
+  The core package ships ready-made pairs. Add an Import block with
+    from rxtune import recipes as rxtune_recipes
+  (NOT "import rxtune.recipes": in generated code that would rebind the name
+  "rxtune", which is already the GNU Radio module) and a Variable
+    judges = rxtune_recipes.atsc3(receiver_dir, python)
+  then Score: judges[0]   Prove: judges[1]
 
   Wire the controller's 'status' output to this block's 'status' input, and give
   the controller a Window longer than record + judge time: cells end early, as
   soon as the result arrives.
 
 templates:
-  imports: |-
-    from gnuradio import rxtune
-    import rxtune.recipes
+  imports: from gnuradio import rxtune
   make: rxtune.capture_dial(samp_rate=${samp_rate}, secs=${secs}, settle_s=${settle_s}, path=${path}, score=${score}, prove=${prove})
 
 parameters:
@@ -43,7 +46,7 @@ parameters:
 - id: path
   label: Capture file
   dtype: string
-  default: rxtune_capture.cs16
+  default: rxtune_capture.cf32
 - id: score
   label: Score
   dtype: raw
