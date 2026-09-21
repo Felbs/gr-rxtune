@@ -13,7 +13,7 @@ How to repeat everything is at the end.
 
 | Area | Result |
 |---|---|
-| Core library, no radio (pytest) | **124 passed**, 0 failed |
+| Core library, no radio (pytest) | **126 passed**, 0 failed |
 | `rxtune selftest` | **13 / 13 gates PASS** |
 | GNU Radio block QA (9 files) | **22 passed**, 0 failed |
 | Closed loop over stock DSP, headless, no Qt | **PASS** |
@@ -23,11 +23,12 @@ How to repeat everything is at the end.
 | Hardware: FM HD (NRSC-5), attachment mode (a) | **PASS** on the third run — HEALTHY, decoding, agrees with an independent prior calibration (runs 1-2 found 3 defects) |
 | Hardware: ATSC 1.0, attachment mode (c) | **PASS** — HEALTHY, +2.9 dB, decoding. Graceful decoder stop FAILED 16 / 27 in the first run; fixed; re-test 0 / 7 |
 | Hardware: ATSC 3.0 (library AND in a GRC flowgraph), port survey, TV in a GNU Radio window | **PASS** - see 6b |
-| Hardware: ADS-B (blind dial) | **INCONCLUSIVE** - too little night traffic; to be repeated |
+| Hardware: ADS-B (blind dial) | **INCONCLUSIVE** twice (1 a.m. and 6 a.m.): too few messages on this antenna; the verdict refuses to rank |
+| Overnight recalibration loop, 5 h unattended | **PASS** - 10 / 10 HEALTHY; the carrier did not go stale, so staleness itself was not demonstrated |
 | CMake install | **NOT RUN** (no cmake on this machine) |
 | Linux / Raspberry Pi | **NOT RUN** |
 
-Twenty defects were found by this testing and fixed; three defects were found in
+Twenty-two defects were found by this testing and fixed; three defects were found in
 *other people's* blocks and are written up in §8.
 
 ## 1. Core library (`pytest`, 118 tests, ~4 s)
@@ -271,7 +272,32 @@ pure-Python project that was not modified; rxtune only runs its commands.
   and `tune()`'s exit released it. The adapter is now re-entrant.
 
 Not done: the bias-T / hot-LNA case (no LNA was inline; DC was not put on a passive antenna).
-Overnight recalibration results: see the end of this section once the run completes.
+**Overnight recalibration** (`util/night_watch.py`, detached, one ATSC 3.0 carrier re-tuned every
+30 minutes from 01:24 to 05:54, 12 cells per round, lab-priority lock, no contention):
+
+| | |
+|---|---|
+| calibrations | **10 of 10 `HEALTHY`, decoding** |
+| best dial | 22.2 .. 23.3 dB SNR (swing 1.1 dB) |
+| best setting | 3 distinct picks, all within one LNA state and mostly the same IF reduction |
+
+Honest reading: the loop, the detached launcher, the lock discipline and the hour log all
+held up for five hours unattended - but **this carrier did not go stale tonight**, so the claim
+"every configuration goes stale, recalibrate forever" was *exercised*, not *demonstrated*. It
+needs a carrier that actually moves (the weak LDM carrier would, if it decoded here at all).
+
+**ADS-B again at 06:20** with morning traffic starting: still thin on this antenna - 5 CRC-valid
+messages across the search. Head-to-head, three interleaved rounds of 15 s captures: rxtune's
+pick 0.7 msgs/s, maximum gain 0.4, hardware AGC 0.1. Suggestive; with ~20 messages in total it
+is **not significant**, and the verdict says so (`UNPROVEN`, nothing recommended). A real ADS-B
+antenna and daytime traffic are needed before this comparison means anything.
+
+The first two launches of the overnight loop failed, and one of them found the most
+dangerous bug of the night: an antenna port name containing a space was mangled by shell quoting,
+its readback failed, and `apply()` **stopped at the first failed knob - so the gain knobs were
+never written**. Every cell measured the same radio state. It was caught only because the raw
+level did not move between cells. `apply()` now writes every knob and reports failures
+afterwards; the scheduler takes its targets from a JSON file, not a quoted string.
 
 ## 7. Defects found by this testing, all fixed
 
@@ -302,6 +328,8 @@ Overnight recalibration results: see the end of this section once the run comple
 18. A pick whose confirmation did not reproduce was allowed to stand.
 19. A message-rate dial ranked settings on two messages; now needs 200.
 20. The GNU Radio capture block converted every sample in Python and dropped samples silently.
+21. `apply()` stopped at the first knob whose readback failed: the remaining knobs were never written.
+22. Verdict wording for counting dials: a "decode threshold" in msgs/s, and "HEALTHY ... not recommended".
 
 Also caught in the test harness itself: a rate probe goes *stale*, not to zero,
 when its upstream dies (so it cannot detect a stopped source — count items

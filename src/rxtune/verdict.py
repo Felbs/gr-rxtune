@@ -90,8 +90,8 @@ def observed_cliff(result: SearchResult, spec: DialSpec, max_spread: float = 1.5
     decoding, the curve itself brackets it: the best STEADY cell that did not decode
     and the worst steady cell that did. Unsteady cells are excluded - a median taken
     across bursts says little about where the cliff is."""
-    if spec.cliff is not None:
-        return None
+    if spec.cliff is not None or not spec.continuous_below_cliff:
+        return None                        # a counting dial has no threshold to bracket
     steady = [p for p in result.points if p.score is not None and p.reading.spread <= max_spread
               and p.reading.alive is not None and not (p.reading.overload == p.reading.overload
                                                        and p.reading.overload >= 0.3)]
@@ -148,6 +148,11 @@ def judge(result: SearchResult, spec: DialSpec, gain_of: Callable[[Point], float
         rep.evidence["messages_counted"] = float(counted)
         if counted < MIN_COUNTED:
             recommend = False
+            if rep.shape in RECOMMENDABLE:
+                # "HEALTHY ... not recommended" reads as a contradiction: say what it is
+                rep.shape = Shape.UNPROVEN
+                rep.rule = (f"{counted} decoded message(s) is not enough evidence to call any "
+                            "setting better than another")
             rep.notes.append(f"only {counted} decoded message(s) in the whole run (< {MIN_COUNTED}): "
                              "too few to rank settings. Repeat with more traffic or longer windows.")
 

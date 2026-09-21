@@ -58,6 +58,7 @@ to compile):
 | **rxtune Dial Probe (M-PSK SNR)** | Stream in, dial out, stock `probe_mpsk_snr_est_c` inside — examples run with no custom decoder. |
 | **rxtune Dial From Tag** | Turns a quality *tag* (e.g. `mpsk_snr_est_cc`'s `snr`) into a dial. |
 | **rxtune Dial Adapter** | A decoder's own telemetry in, a dial out. Ships ATSC (equaliser training error → MER) and NRSC-5 / HD Radio (nrsc5 MER, BER). |
+| **rxtune Capture Dial** | For decoders whose honest quality number only exists offline: records a few seconds per cell and lets the decoder's own tools judge the file (dial + proof of decode). |
 | **rxtune Message Setter** | Command in, setter *method call* on another block, with readback. For everything that has no message port. |
 | **rxtune Dashboard** | Optional Qt widget: live dial, gain-grid heatmap, verdict text. Docks like any QT GUI widget. |
 
@@ -73,6 +74,14 @@ a peak, and the collapse where the neighbour hits the converter's rails:
 
 ![The loopback example running](docs/img/loopback_qtgui.png)
 
+On a **real radio**: `examples/atsc3_live.grc` tunes an SDRplay on a live ATSC 3.0
+(NextGen TV) carrier. The controller sets both gain elements **by message** on the stock
+Soapy source; an external receiver judges a short capture at every cell (SNR off the
+frame's known cells, plus an actual decode as proof); grey = clipped or no decode, green =
+decodes. The white box is the pick, confirmed by a second, longer look:
+
+![rxtune tuning a real radio on ATSC 3.0 inside a GRC flowgraph](docs/img/atsc3_live_run.png)
+
 The blocks in GRC's tree:
 
 ![The rxtune category in GRC's block tree](docs/img/grc_block_tree.png)
@@ -83,7 +92,9 @@ Most decoders grab the SDR themselves, and then nothing else can touch the gain.
 So decoders attach in one of three ways, in this order of preference:
 
 - **(a) rxtune owns the SDR and pipes IQ to the decoder** — stdin, a file, ZMQ,
-  or a flowgraph. `examples/hw_nrsc5.py` drives an *unmodified* `nrsc5` this way.
+  or a flowgraph. `examples/hw_nrsc5.py` drives an *unmodified* `nrsc5` this way;
+  `examples/hw_atsc3_capture.py` records a few seconds per cell and lets an ATSC 3.0
+  receiver's own offline tools judge the file.
 - **(b) the decoder exposes a runtime control** — wrap it in a ten-line adapter.
 - **(c) restart the decoder for every grid cell** — slow calibration only.
   `examples/hw_atsc_stvt.py`.

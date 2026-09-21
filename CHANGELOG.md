@@ -17,4 +17,8 @@ First extraction of the adaptive tuning loop into a standalone project.
 - `gnuradio.rxtune` blocks (GNU Radio 3.10, Python only): Controller, Dial Probe
   (M-PSK SNR), Dial From Tag, Dial Adapter (ATSC MER, NRSC-5 MER/BER), Message
   Setter, Qt Dashboard; GRC definitions; radio-free loopback examples.
+- Capture-per-cell attachment (`attach.CaptureMeasurer`, GNU Radio Capture Dial block),
+  `rxtune.recipes` (ATSC 3.0, Mode S), a real-radio GRC example, a TV-in-a-GNU-Radio-window
+  example, `util/night_watch.py`, observed decode threshold, re-pick on failed confirmation,
+  minimum evidence for counting dials.
 - docs: prior art, design, usage, migration plan for the parent projects, test report.

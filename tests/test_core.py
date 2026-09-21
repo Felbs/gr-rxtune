@@ -392,3 +392,20 @@ def test_one_failed_knob_does_not_stop_the_others_being_written():
         apply(FE(), {"antenna": "B", "g": 7})
     assert box["g"] == 7, "the gain knob must still have been written"
     assert "antenna" in str(e.value)
+
+
+def test_a_counting_dial_needs_evidence_before_it_may_rank():
+    """From the ADS-B hardware runs: 2 and then 5 messages in a whole search."""
+    from rxtune.dial import Reading
+    from rxtune.verdict import judge
+    spec = DialSpec("msg_rate", "msgs/s", continuous_below_cliff=False, settle_s=0, window_s=1)
+    axis = Axis.of(KnobSpec("g", "range", 0, 3, 1, sense="gain"))
+
+    def measure(setting):
+        n = [0, 3, 2, 0][setting["g"]]
+        return Reading(value=n / 10.0, score=n / 10.0, n=max(1, n), p10=n / 10.0, p90=n / 10.0, alive=n > 0)
+    t = Tuner([axis], spec, pick="max", confirm=False)
+    v = judge(t.run(measure), spec, t.gain_of)
+    assert v.shape is Shape.UNPROVEN and not v.ok
+    assert not any("decode threshold" in n for n in v.notes)
+    assert any("too few to rank" in n for n in v.notes)

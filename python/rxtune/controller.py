@@ -236,7 +236,7 @@ class controller(gr.basic_block):
         self.message_port_pub(pmt.intern("status"), pmt.to_pmt(_plain(
             {"state": self.state, "reason": "cell start", "setting": setting, "settle_s": settle,
              "window_scale": scale, "cell": len(self.tuner.result.points) + 1,
-             "mode": "device-handle" if self.frontend is not None else "message"})))
+             "mode": self._mode()})))
         self.acc = Accumulator(self.spec, time.monotonic(), settle_s=self.spec.settle_s + settle,
                                window_s=self.spec.window_s * scale)
 
@@ -297,11 +297,14 @@ class controller(gr.basic_block):
         else:
             self._sag_since = None
 
+    def _mode(self):
+        return ("device-handle" if self.frontend is not None else
+                "message + readback" if self._readback_seen else "message (open-loop)")
+
     def _status(self, reason, reading=None):
         n = len(self.tuner.result.points) if self.tuner else 0
         doc = {"state": self.state, "cell": n, "setting": dict(self.pending or {}), "reason": reason,
-               "mode": ("device-handle" if self.frontend is not None else
-                        "message + readback" if self._readback_seen else "message (open-loop)")}
+               "mode": self._mode()}
         if reading is not None:
             doc.update({"value": reading.value, "alive": reading.alive, "level_db": reading.level_db,
                         "overload": reading.overload, "n": reading.n})

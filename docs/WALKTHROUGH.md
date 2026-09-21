@@ -27,7 +27,7 @@ the `gnuradio` package. For day-to-day GRC use, install.
 > If GRC, `grcc` or `gr_modtool` behave as if they belonged to a different GNU
 > Radio, look for a stale `GR_PREFIX` or `GRC_BLOCKS_PATH` in your environment.
 
-Open the block tree and search `rxtune`. You should see six blocks:
+Open the block tree and search `rxtune`. You should see seven blocks:
 
 ![The rxtune category in GRC's block tree](img/grc_block_tree.png)
 
@@ -132,6 +132,40 @@ Replace row 3 with your decoder and give the controller its quality number:
 
 Outside GNU Radio the same loop is a few lines of Python; see `docs/USAGE.md`
 and `examples/hw_nrsc5.py`, which tunes a radio against an unmodified `nrsc5`.
+
+## 3b. The same loop on a real radio: ATSC 3.0
+
+`examples/atsc3_live.grc` is what section 3 describes, built: an SDRplay on a live
+NextGen TV carrier, judged by an external (non-GNU-Radio) ATSC 3.0 receiver.
+
+![The real-radio flowgraph](img/grc_atsc3_live.png)
+
+- **Soapy SDRPlay Source** - its `cmd` port takes the controller's per-element gain
+  messages (`{"gain": {"name": "IFGR", "gain": 40.0}}`) directly. No setter block needed.
+- **rxtune Capture Dial** - this receiver's honest quality number only exists offline, so
+  at each cell the block records five seconds and hands the file to the receiver's own
+  tools: SNR read off the frame's known cells (the dial), and a real decode (the proof).
+  The pair comes from `rxtune.recipes.atsc3(...)`. Its `.cf32` path matters: a Python block
+  that converts every sample cannot keep up with a 7 MS/s radio, and a capture with dropped
+  samples is garbage of exactly the right length. The block voids any capture whose sample
+  count does not match the clock.
+- Frequency, antenna port and the receiver's location are **Parameters** - nothing about
+  any station is stored in the flowgraph.
+
+Mid-search - the waterfall shows the controller stepping the gain; grey cells clipped or did
+not decode, green ones decode:
+
+![Searching](img/atsc3_live_searching.png)
+
+Done - `HEALTHY`, 23 dB, decoding; the pick (white box) is in the steady green region and
+was confirmed by a second, longer look; the verdict also reports the decode threshold it
+*observed* (cells at ~14 dB did not decode, cells at ~21 dB did):
+
+![Verdict](img/atsc3_live_run.png)
+
+`examples/hw_atsc3_tv_window.py` goes one step further: GNU Radio owns the radio and streams
+IQ to the receiver, whose player renders *into a pane of the flowgraph window* - television
+inside GNU Radio, from a decoder that is not made of GNU Radio blocks, at the gain rxtune chose.
 
 ## 4. Two traps this flowgraph is built to teach
 
