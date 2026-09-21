@@ -1,0 +1,55 @@
+# SDRplay RSPdx via SoapySDRPlay3. Data only; everything here was either read
+# from the driver source or measured on the bench. Items marked (measured)
+# were confirmed on hardware by the gr-rxtune test run.
+name: sdrplay_rspdx
+match:
+  driver: "sdrplay*"
+  hardware: "rspdx*"
+
+# Default search: the RF stage selects a REGIME (sensitivity vs headroom) and
+# the IF reduction sets LEVEL. Both are gain REDUCTIONS: larger = less gain.
+search: ["gain:RFGR", "gain:IFGR"]
+
+knobs:
+  "gain:IFGR":
+    sense: reduction
+    role: level
+    settle_s: 0.15
+    note: "IF gain reduction, dB. Ignored by the driver while hardware AGC is on."
+  "gain:RFGR":
+    sense: reduction
+    role: regime
+    settle_s: 0.2
+    note: "LNA state INDEX, not dB. Step size is non-uniform and band-dependent."
+  "antenna":
+    settle_s: 0.5
+  "setting:biasT_ctrl":
+    settle_s: 1.0
+    note: "Bias-T exists on Antenna B only."
+  "freq":
+    settle_s: 0.3
+
+# Never offered to the search: not receive-quality knobs, or duplicates.
+ignore:
+  - "setting:iqcorr_ctrl"
+  - "setting:extref_ctrl"
+  - "setting:rfgain_sel"      # menu alias of gain:RFGR in drivers built with RF_GAIN_IN_MENU
+
+agc_blocks: ["gain:IFGR"]
+bias_t: "biasT_ctrl"
+
+known_bad:
+  - why: "The DAB notch covers 174-240 MHz, which is also TV band III / US VHF-high."
+    "setting:dabnotch_ctrl": "true"
+    freq: [174.0e6, 240.0e6]
+  - why: "The FM notch covers the FM broadcast band itself."
+    "setting:rfnotch_ctrl": "true"
+    freq: [85.0e6, 110.0e6]
+
+quirks:
+  - "ArgInfo.value for every BOOL setting is 'true' (a declared default, not state). Use readSetting."
+  - "Overall setGain() is inverted on this driver (both elements are reductions and the generic
+    RF-first fill assumes gains). gr-rxtune never uses the overall path."
+  - "Hardware AGC with a setpoint can own the LEVEL knob (IFGR) once the REGIME knob is chosen;
+    that removes the time-of-day drift a fixed IFGR suffers."
+  - "Do not terminate a process that is streaming from this device; the vendor service can wedge."

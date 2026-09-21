@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rxtune"
+version = "0.1.0"
+description = "Receiver tuning loop: a decoder-truth dial drives a search over discovered SDR knobs; the curve's shape becomes an honest verdict."
+readme = "README.md"
+license = { text = "GPL-3.0-or-later" }
+requires-python = ">=3.9"
+dependencies = ["numpy", "PyYAML"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+rxtune = "rxtune.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+rxtune = ["profiles/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

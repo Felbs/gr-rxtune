@@ -26,6 +26,9 @@ LNA_MAX_OUT_DBM = -12.0                                # where the LNA starts to
 IF_REJECTION_DB = 35.0                                 # out-of-band interferer is filtered before the ADC
 
 
+CONFIG_LIVE = {"plain": 1.0, "erasure": 1.3, "slow_avg": 0.5}
+
+
 def _sum_db(*levels: float) -> float:
     return 10.0 * math.log10(sum(10.0 ** (x / 10.0) for x in levels))
 
@@ -96,7 +99,8 @@ class SimReceiver:
         self.sc = SCENARIOS[scenario] if isinstance(scenario, str) else scenario
         self.clock = clock or SimClock()
         self.rng = random.Random(seed)
-        self.state: Dict[str, Any] = {"gain:RF": 4, "gain:IF": 40, "antenna": "A", "agc": True}
+        self.state: Dict[str, Any] = {"gain:RF": 4, "gain:IF": 40, "antenna": "A", "agc": True,
+                                      "config": "plain"}
         self._writes: Dict[str, Any] = dict(self.state)
         self._live = 0.0
         self._t_live = self.clock.now()
@@ -110,6 +114,10 @@ class SimReceiver:
                                 settle_s=0.1, note="IF gain reduction"),
             "antenna": KnobSpec("antenna", "choice", choices=("A", "B"), ordered=False,
                                 sense="none", role="path", cost="slow", settle_s=0.5),
+            # a recovery-config knob. "slow_avg" FLATTERS the dial (+2 dB) while
+            # decoding less: the reason a shootout is judged by content.
+            "config": KnobSpec("config", "choice", choices=tuple(CONFIG_LIVE), ordered=False,
+                               sense="none", role="config", cost="restart", settle_s=1.0),
         }
 
     # ---- Frontend -------------------------------------------------------
@@ -173,6 +181,8 @@ class SimReceiver:
         if since < 1.5:
             mer -= 6.0 * (1.0 - since / 1.5)
         mer += self.rng.gauss(0, 0.15)
+        if self.state["config"] == "slow_avg":
+            mer += 2.0
         if sc.blind_below is not None:
             return 0.0 if mer < sc.blind_below else round(20.0 * (mer - sc.blind_below) + 5.0, 1)
         if mer < 4.0:
@@ -191,7 +201,7 @@ class SimReceiver:
             mer += self.sc.fade_db * math.sin(2 * math.pi * t / self.sc.fade_period_s)
         threshold = self.sc.blind_below if self.sc.blind_below is not None else (SIM_MER.cliff or 0)
         if mer >= threshold:
-            self._live += 30.0 * dt
+            self._live += 30.0 * dt * CONFIG_LIVE[self.state["config"]]
 
     def count(self) -> int:
         self._advance_liveness()
