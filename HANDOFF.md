@@ -8,10 +8,10 @@ examples, hardware runs. **No GitHub repository exists and nothing has been
 pushed; both need the owner's explicit word.**
 
 ## Read first
-1. `README.md` — what it is, the method, the blocks, credits
+1. `README.md` — what it is, the method, the blocks, credits; `docs/WALKTHROUGH.md` — follow along in GRC, with screenshots
 2. `docs/TEST_REPORT.md` — what passed, what failed, what was NOT tested and why
 3. `docs/DESIGN.md` — interfaces, message contract, §5 source-block findings
-4. `docs/USAGE.md`, `docs/MIGRATION.md`, `docs/PRIOR_ART.md`, `BUILD_LOG.md`
+4. `docs/USAGE.md`, `docs/MIGRATION.md`, `docs/PRIOR_ART.md`, `docs/UPSTREAM_REPORTS.md` (drafts, NOT filed), `BUILD_LOG.md`
 
 ## Get going on a fresh machine
 ```

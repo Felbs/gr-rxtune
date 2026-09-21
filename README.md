@@ -61,7 +61,21 @@ to compile):
 | **rxtune Message Setter** | Command in, setter *method call* on another block, with readback. For everything that has no message port. |
 | **rxtune Dashboard** | Optional Qt widget: live dial, gain-grid heatmap, verdict text. Docks like any QT GUI widget. |
 
-![The loopback example running in a GRC Qt flowgraph](docs/img/loopback_qtgui.png)
+**Follow along in GNU Radio Companion, no radio needed: [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md).**
+
+The example flowgraph - the air, a radio with one gain knob and a converter that
+clips, a stock demodulator, and the loop (dashed wires are messages):
+
+![The loopback flowgraph in GNU Radio Companion](docs/img/grc_loopback_qtgui.png)
+
+Running, docked beside stock QT GUI widgets. The heatmap is the search: a slope,
+a peak, and the collapse where the neighbour hits the converter's rails:
+
+![The loopback example running](docs/img/loopback_qtgui.png)
+
+The blocks in GRC's tree:
+
+![The rxtune category in GRC's block tree](docs/img/grc_block_tree.png)
 
 ## The loop owns the radio
 

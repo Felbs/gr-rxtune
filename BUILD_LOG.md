@@ -70,3 +70,18 @@ another GNU Radio install; override them for this project. No cmake. pytest live
 in the plain CPython, GNU Radio in radioconda.
 
 **Still unverified**: everything in TEST_REPORT §9.
+
+## 2026-09-21 — session 3: publish prep
+
+- Owner: create the GitHub repo; add GRC screenshots so people can follow along; do the
+  decoder stop fix.
+- `util/grc_screenshot.py` renders a .grc with GRC's OWN canvas and screen-capture code,
+  headless (needs a dummy Gtk.Application, a stubbed context menu, and Platform imported
+  before Utils - GRC's gui modules import in a circle). `util/grc_block_tree_shot.py`
+  does the block-tree panel. Examples re-laid out in four labelled rows with Virtual
+  Sink/Source pairs; both still compile and the Qt run still passes 8/8.
+- `docs/WALKTHROUGH.md`, `docs/UPSTREAM_REPORTS.md` (drafts only).
+- Decoder stop: the edit to the TV project's `tv_live.py` was refused by the tool
+  permission layer, so that repository is untouched. Root cause turned out to be a
+  `time.sleep(10)` in its main thread (not a blocking wait()); default grace raised to
+  15 s; hardware re-test 0 hard kills in 7 restarts. Decoder-side patch is in MIGRATION.md.

@@ -63,12 +63,33 @@ These open SoapySDR in-process and write `rfgain_sel` with no readback.
   `RFGR` are the same control, and its range on the RSPdx is 0-27, not 0-9.)
 - **Chains are stopped with a hard `terminate()` while streaming.**
   `attach.graceful_stop()` sends CTRL_BREAK / SIGINT first, and `tv_live.py` has a
-  handler for it - but **measured: it answered in only 11 of 27 restarts.** The
-  rest timed out and were terminated. Likely cause: the main thread blocks in the
-  flowgraph's `wait()`, where a Python signal handler cannot run. Fix in the
-  decoder: wait in a loop (`while not stop_event.wait(0.2)`), or watch a stop file
-  as the rig's other tools do. **Do this first**; it is small, and every
-  restart-per-cell calibration until then is a hard kill of a streaming process.
+  handler for it - but **measured: with an 8 s grace it answered in only 11 of 27
+  restarts.** Cause, from reading the code: the main thread sits in
+  `time.sleep(10)` (the file-rotation watchdog), and on Windows a SIGBREAK handler
+  cannot run until that sleep returns, so a stop takes up to 10 s plus shutdown.
+  rxtune's default grace is now 15 s, which lets the unpatched chain stop itself
+  (verified, see TEST_REPORT). The proper fix is three lines in the decoder - the
+  handler only sets a flag, and the main loop polls it:
+
+  ```python
+  _stop_evt = threading.Event()
+  def _stop(signum, frame):
+      _stop_evt.set()
+  ...
+  ticks = 0
+  while not _stop_evt.is_set():
+      time.sleep(0.2)
+      ticks += 1
+      if ticks % 50:
+          continue
+      ...rotation check as before...
+  LOG.info("Stopping live TV flowgraph...")
+  tb.stop(); tb.wait(); sys.exit(0)
+  ```
+
+  That makes every stop sub-second and takes ~10 s off each restart-per-cell
+  calibration cell. (Not applied by the gr-rxtune work: the parent repositories
+  were left untouched.)
 - **A stale second copy of `adaptive-tv/` exists beside the repository**, and
   `config_shootout.py` still points into it. Pick one before migrating.
 - `config_shootout` scores by the dial across configs that change what the dial

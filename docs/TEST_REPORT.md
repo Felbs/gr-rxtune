@@ -21,7 +21,7 @@ How to repeat everything is at the end.
 | Qt flowgraph beside stock gr-qtgui widgets | **8 / 8 checks PASS**, offscreen and on a real display |
 | Source-block command compatibility | gr-soapy **tested on hardware**; gr-osmosdr tested on the real block (file source); gr-uhd **not testable here** |
 | Hardware: FM HD (NRSC-5), attachment mode (a) | **PASS** on the third run — HEALTHY, decoding, agrees with an independent prior calibration (runs 1-2 found 3 defects) |
-| Hardware: ATSC 1.0, attachment mode (c) | **PASS with one FAILURE** — HEALTHY, +2.9 dB, decoding; graceful decoder stop failed 16 / 27 times |
+| Hardware: ATSC 1.0, attachment mode (c) | **PASS** — HEALTHY, +2.9 dB, decoding. Graceful decoder stop FAILED 16 / 27 in the first run; fixed; re-test 0 / 7 |
 | CMake install | **NOT RUN** (no cmake on this machine) |
 | Linux / Raspberry Pi | **NOT RUN** |
 
@@ -207,16 +207,19 @@ searched (the FM run had already shown states beyond that to be deaf on this rad
   with the fixed code: `headroom` -> one LNA state further from the overload edge,
   18.2 dB, decoding; `knee` -> LNA state 8, 18.05 dB; `max` -> 18.45 dB.
   The channel was not re-run on hardware (see the next point).
-- **FAILED: graceful stop.** "decoder hard-killed **16** time(s)" of 27. CTRL_BREAK did
-  not stop the TV chain within 8 s in 16 restarts, so the fallback `terminate()` fired
-  on a process that was streaming from the radio - the very thing the rig's rules warn
-  against. Cause (by inspection, not proven): the chain's main thread sits in a blocking
-  `wait()`, where a Python signal handler cannot run. No harm was observed - the radio
-  opened and streamed normally afterwards, no stray processes, lock free - and the
-  parent project's own tools hard-terminate on every cell, so this is no worse than
-  current practice; but it is not what this library promises. The fix belongs in the
-  decoder (poll instead of block), and mode (a) removes the problem entirely. It is
-  the first item in MIGRATION.md.
+- **FAILED, then fixed: graceful stop.** "decoder hard-killed **16** time(s)" of 27.
+  CTRL_BREAK did not stop the TV chain within the 8 s grace in 16 restarts, so the
+  fallback `terminate()` fired on a process that was streaming from the radio - the
+  very thing the rig's rules warn against. No harm was observed (the radio opened and
+  streamed normally afterwards, no stray processes, lock free), and the parent
+  project's own tools hard-terminate on every cell, but it is not what this library
+  promises. **Cause, found by reading the decoder** (my first guess, a blocking
+  `wait()`, was wrong): its main thread sits in `time.sleep(10)`, and on Windows a
+  SIGBREAK handler cannot run until the sleep returns. **Fix on our side:** the
+  default grace is now 15 s. **Re-tested on hardware: 7 restarts, 0 hard kills**,
+  same verdict (HEALTHY, 18.1 dB, +2.9 dB, decoding). The three-line decoder-side fix
+  that would make stops sub-second is written out in MIGRATION.md; the parent
+  repository was not modified.
 - **Unexplained:** three cells with a healthy dial and zero headers had only ~half the
   dial samples (n = 23-30 vs 47): the chain started slowly there and the transport
   stream had probably not begun inside the window. In mode (c) a slow start is

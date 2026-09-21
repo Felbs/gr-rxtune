@@ -115,17 +115,22 @@ class PatternCounter:
         return self._count
 
 
-def graceful_stop(proc: subprocess.Popen, grace_s: float = 8.0) -> None:
+def graceful_stop(proc: subprocess.Popen, grace_s: float = 15.0) -> bool:
     """Ask first. A decoder that is STREAMING FROM A RADIO must be allowed to
     close the device itself: hard-killing a streaming process can wedge a vendor
     driver service. On Windows that means CTRL_BREAK to a process started in its
-    own process group (use popen_group()); elsewhere SIGINT."""
+    own process group (use popen_group()); elsewhere SIGINT.
+
+    Returns True if the decoder stopped by itself. The default grace is long on
+    purpose: a Python decoder whose main thread sleeps 10 s at a time cannot run
+    its signal handler until the sleep returns (measured: with an 8 s grace, 16 of
+    27 stops timed out and fell through to terminate())."""
     if proc.poll() is not None:
-        return
+        return True
     try:
         proc.send_signal(signal.CTRL_BREAK_EVENT if sys.platform == "win32" else signal.SIGINT)
         proc.wait(timeout=grace_s)
-        return
+        return True
     except (subprocess.TimeoutExpired, OSError, ValueError):
         pass
     proc.terminate()                                  # last resort, and it is logged as one
@@ -133,6 +138,7 @@ def graceful_stop(proc: subprocess.Popen, grace_s: float = 8.0) -> None:
         proc.wait(timeout=grace_s)
     except subprocess.TimeoutExpired:
         proc.kill()
+    return False
 
 
 def popen_group(argv, **kw) -> subprocess.Popen:
@@ -194,7 +200,7 @@ class RestartPerCell:
     view in this mode, so level() is None and the verdict is open-loop."""
 
     def __init__(self, specs: Sequence[KnobSpec], launch: Callable[[Setting], subprocess.Popen],
-                 scraper: LineScraper, scrape: str = "stderr", grace_s: float = 8.0,
+                 scraper: LineScraper, scrape: str = "stderr", grace_s: float = 15.0,
                  release_s: float = 1.5):
         self._specs = {s.name: s.with_(cost="restart") for s in specs}
         self._launch, self.scraper, self._scrape, self._grace = launch, scraper, scrape, grace_s
@@ -226,9 +232,7 @@ class RestartPerCell:
     def stop(self) -> None:
         if self.proc is None:
             return
-        t0 = time.monotonic()
-        graceful_stop(self.proc, self._grace)
-        if time.monotonic() - t0 >= self._grace:
+        if not graceful_stop(self.proc, self._grace):
             self.hard_kills += 1
         self.proc = None
         time.sleep(self._release_s)          # let the device be released before the next open
