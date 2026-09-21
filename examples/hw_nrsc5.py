@@ -2,9 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """HARDWARE example, attachment mode (a): rxtune owns the SDR and pipes IQ into an
 unmodified nrsc5 (HD Radio). Dial = nrsc5's own MER, the WORSE sideband.
-Liveness = decoded audio actually written to the output file.
+Liveness = nrsc5's "Audio bit rate" line, which it prints only from valid decoded
+audio packets (its output FILE keeps growing with nothing decoded: not proof).
 
-  python hw_nrsc5.py --mhz 93.3 --antenna "Antenna C" --nrsc5 /path/to/nrsc5
+  python hw_nrsc5.py --mhz <station MHz> --antenna "<port>" --nrsc5 /path/to/nrsc5
 
 nrsc5 wants cu8 at 1 488 375 Hz on stdin ("-r -"); the radio runs at exactly twice
 that and a transform halves it on the way through. Nothing in nrsc5 is touched:
@@ -24,8 +25,8 @@ sys.path.insert(0, os.path.join(HERE, "..", "src"))
 import numpy as np  # noqa: E402
 
 from rxtune import lock, profile, soapy  # noqa: E402
-from rxtune.adapters import Nrsc5MerScraper  # noqa: E402
-from rxtune.attach import FileGrowth, PipeDecoder  # noqa: E402
+from rxtune.adapters import NRSC5_LIVE_RE, Nrsc5MerScraper  # noqa: E402
+from rxtune.attach import PipeDecoder  # noqa: E402
 from rxtune.loop import tune  # noqa: E402
 from rxtune.store import Store, fingerprint  # noqa: E402
 
@@ -62,7 +63,7 @@ def main():
     wav = os.path.join(tempfile.gettempdir(), "rxtune_nrsc5.wav")
     if os.path.exists(wav):
         os.unlink(wav)                       # a stale output file would fake liveness
-    scraper = Nrsc5MerScraper(live_re=None)
+    scraper = Nrsc5MerScraper(live_re=NRSC5_LIVE_RE)
     scraper.spec = scraper.spec.__class__(**{**scraper.spec.__dict__, "settle_s": a.settle,
                                              "window_s": a.window})
     # with -r, nrsc5 takes the PROGRAM only (the frequency belongs to whoever owns the radio)
@@ -75,7 +76,7 @@ def main():
         fixed = {"antenna": a.antenna} if a.antenna else {}
         try:
             fe.start(sink=dec.start(), transform=halve_to_cu8)
-            rep = tune(fe, scraper, FileGrowth(wav), lock=lk, fixed=fixed, health=dec.health,
+            rep = tune(fe, scraper, scraper, lock=lk, fixed=fixed, health=dec.health,
                        search=prof.search or None, coarse_points=a.coarse, max_cells=a.max_cells,
                        known_bad=prof.is_known_bad(), thresholds=prof.thresholds or None,
                        on_cell=lambda s, r: print(

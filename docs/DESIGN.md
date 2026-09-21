@@ -1,7 +1,17 @@
-# gr-rxtune design (DRAFT for approval — no bulk code written yet)
+# gr-rxtune design
 
-Status 2026-09-20: name check and prior-art read done (`PRIOR_ART.md`).
-This document is the gate. Nothing below is built.
+Status: approved by the owner 2026-09-20 and built. This is the design as
+approved; where the build departed from it, `BUILD_LOG.md` (session 2,
+"Deviations") says how and why. Section 5 was written from source reading and
+has since been **tested on hardware** - the measured amendments are marked
+[MEASURED] below and detailed in `TEST_REPORT.md` section 5.
+
+[MEASURED] gr-soapy per-element gain, antenna and freq by message: work.
+[MEASURED] gr-soapy `setting` by message: on SoapySDRPlay the handler throws
+"Invalid setting" (settings are device-level, the handler writes per channel) and
+the uncaught exception ENDS THE SOURCE BLOCK. rxtune refuses to send it.
+[MEASURED] gr-soapy Python `read_setting()` returned True for a boolean in every
+state; `write_setting()` works. [MEASURED] `RFGR` and `rfgain_sel` are one control.
 
 ## 1. What it is
 

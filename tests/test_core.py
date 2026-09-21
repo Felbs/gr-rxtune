@@ -284,3 +284,39 @@ def test_custom_scenario_roundtrip():
     assert sc.name not in SCENARIOS
     _, rep = run(SimReceiver(sc))
     assert rep.verdict.shape is Shape.HEALTHY
+
+
+def test_headroom_pick_treats_a_noisy_plateau_as_a_tie():
+    """From the first hardware run: flat plateau, one lucky reading near the ridge."""
+    from rxtune.dial import Reading
+    from rxtune.optimize import Point, pick_headroom
+    spec = DialSpec("MER", resolution=0.2)
+
+    def pt(level, score):
+        r = Reading(value=score, score=score, n=10, p10=score - 0.5, p90=score + 0.5,
+                    overload=0.0, level_db=level)
+        return Point((0,), {"g": level}, r, "coarse", "")
+    pts = [pt(-31, 11.8), pt(-25, 12.7), pt(-19, 13.0), pt(-16, 12.9), pt(-13, 12.9), pt(-12.6, 13.5)]
+    chosen = pick_headroom(pts, spec, lambda p: p.reading.level_db)
+    assert chosen.reading.level_db <= -16, chosen.reading.level_db     # not the lucky cell by the ridge
+    assert chosen.score >= 12.9
+
+
+def test_a_cell_that_did_not_decode_cannot_win():
+    """From the ATSC hardware run: the highest MER of the run had no video in it."""
+    from rxtune.dial import Reading
+    spec = DialSpec("MER", cliff=15.2, settle_s=0, window_s=1)
+    axis = Axis.of(KnobSpec("g", "range", 0, 4, 1, sense="gain"))
+    curve = {0: (18.4, True), 1: (18.4, True), 2: (18.5, True), 3: (18.9, False), 4: (None, False)}
+
+    def measure(setting):
+        v, alive = curve[setting["g"]]
+        return Reading(value=v, score=v, n=20, p10=None if v is None else v - 0.2,
+                       p90=None if v is None else v + 0.2, alive=alive)
+    t = Tuner([axis], spec)
+    res = t.run(measure)
+    assert res.best.setting["g"] != 3 and res.best.reading.alive
+    assert any("nothing decoded there" in line for line in res.log)
+    from rxtune.verdict import judge
+    v = judge(res, spec, t.gain_of)
+    assert v.shape is Shape.HEALTHY and v.ok

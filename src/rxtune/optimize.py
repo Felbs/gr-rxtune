@@ -64,7 +64,14 @@ def pick_headroom(points: List[Point], spec: DialSpec, gain_of) -> Point:
     """Near-ties go to the cell with fewer rail transients, then to less gain:
     margin against the next strong signal is worth more than 0.2 dB of dial."""
     top = max(p.score for p in points)
-    near = [p for p in points if top - p.score <= 1.5 * spec.resolution]
+    # A tie is a tie WITHIN THE NOISE OF THE RULER. (Found on hardware: a plateau flat
+    # to +/-0.4 dB over 25 dB of gain, one lucky 13.5 dB reading, and a pick parked
+    # 5 dB under the overload ridge.) Tolerance = half the typical p10..p90 of the
+    # best cells, never less than the dial's stated resolution.
+    best_few = sorted(points, key=lambda p: -p.score)[:5]
+    spreads = sorted(p.reading.spread for p in best_few)
+    tol = max(1.5 * spec.resolution, 0.5 * spreads[len(spreads) // 2])
+    near = [p for p in points if top - p.score <= tol]
     rails = min(_nz(p.reading.overload) for p in near)
     near = [p for p in near if _nz(p.reading.overload) <= rails + 0.05]
     # toward less gain, but not ON the low edge of the plateau: one third of
@@ -273,7 +280,17 @@ class Tuner:
         scored = self._scored()
         if not scored:
             return
-        best = PICKERS[self.pick](scored, self.spec, self.gain_of)
+        # A cell that did not decode cannot win while any cell that DID decode exists.
+        # (Seen on hardware: the best MER of a whole run belonged to a cell with no
+        # video in it.) The dead cells stay in the curve: they are evidence.
+        proven = [p for p in scored if p.reading.alive is True]
+        if proven and len(proven) < len(scored):
+            dead_top = max((p for p in scored if p.reading.alive is not True), key=lambda p: p.score)
+            if dead_top.score >= max(p.score for p in proven):
+                self.result.log.append(
+                    f"ignored {dead_top.setting}: best dial of the run "
+                    f"({dead_top.reading.value:.2f} {self.spec.units}) but nothing decoded there")
+        best = PICKERS[self.pick](proven or scored, self.spec, self.gain_of)
         self.result.log.append(f"pick[{self.pick}] -> {best.setting} "
                                f"({best.reading.value:.2f} {self.spec.units})")
         if self.confirm:
@@ -286,7 +303,7 @@ class Tuner:
         self.result.best = best
 
     def _distinct_seeds(self, coarse: List[List[int]]) -> List[Point]:
-        scored = sorted(self._scored(), key=lambda p: -p.score)
+        scored = sorted(self._scored(), key=lambda p: (p.reading.alive is False, -p.score))
         seeds: List[Point] = []
         for p in scored:
             if len(seeds) >= self.top_k:

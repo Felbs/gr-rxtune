@@ -205,7 +205,9 @@ class RestartPerCell:
         self.proc: Optional[subprocess.Popen] = None
 
     def knobs(self) -> Dict[str, Knob]:
-        return {n: FunctionKnob(s, (lambda v, n=n: self._set(n, v)), (lambda n=n: self._state.get(n)))
+        # getter=None on purpose: echoing back what we asked for is not a readback, and
+        # this mode cannot see the hardware. The verdict says "open-loop".
+        return {n: FunctionKnob(s, (lambda v, n=n: self._set(n, v)), None)
                 for n, s in self._specs.items()}
 
     def _set(self, name: str, value) -> None:

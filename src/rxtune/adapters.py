@@ -34,7 +34,9 @@ def atsc_scraper(live_re: Optional[str] = None) -> LineScraper:
 # "MER: 10.5 dB (lower), 11.2 dB (upper)"   "BER: 0.000123, avg: ..., min: ..., max: ..."
 NRSC5_MER_RE = r"MER:\s*(-?[\d.]+) dB \(lower\),\s*(-?[\d.]+) dB \(upper\)"
 NRSC5_BER_RE = r"BER:\s*([\d.eE+-]+)"
-NRSC5_LIVE_RE = r"(Audio bit rate|Title:|Station name:|Slogan:)"
+# nrsc5 prints this only from VALID decoded audio packets. Its output file is no proof:
+# (measured) it keeps growing while the dial is silent and the radio hears only noise.
+NRSC5_LIVE_RE = r"Audio bit rate: [\d.]+ kbps"
 NRSC5_MER = DialSpec("MER", "dB", cliff=None, settle_s=3.0, window_s=6.0, min_samples=3)
 NRSC5_BER = DialSpec("BER", "ratio", higher_is_better=False, transform="log10",
                      settle_s=3.0, window_s=8.0, min_samples=3)

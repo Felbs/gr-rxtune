@@ -9,7 +9,7 @@ MER_dB = 20*log10(5 / fs_err_rms), data cliff 15.2 dB. Liveness = MPEG-2 sequenc
 headers found in the transport stream it writes (file growth would not do: the chain
 can emit full-rate null packets with nothing in them).
 
-  python hw_atsc_stvt.py --tv-live /path/to/tools/tv_live.py --rf 36 --antenna "Antenna A"
+  python hw_atsc_stvt.py --tv-live /path/to/tools/tv_live.py --rf <channel> --antenna "<port>"
 
 The chain is stopped with CTRL_BREAK / SIGINT so that IT closes the radio. Set
 RXTUNE_LOCK to a site lock module if the radio is shared."""

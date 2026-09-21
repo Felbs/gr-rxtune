@@ -33,7 +33,8 @@ knobs:
 ignore:
   - "setting:iqcorr_ctrl"
   - "setting:extref_ctrl"
-  - "setting:rfgain_sel"      # menu alias of gain:RFGR in drivers built with RF_GAIN_IN_MENU
+  - "setting:rfgain_sel"      # (measured) the SAME control as gain:RFGR: a write to either
+                              # reads back through the other. Range 0-27 on the RSPdx.
 
 agc_blocks: ["gain:IFGR"]
 bias_t: "biasT_ctrl"
@@ -52,4 +53,9 @@ quirks:
     RF-first fill assumes gains). gr-rxtune never uses the overall path."
   - "Hardware AGC with a setpoint can own the LEVEL knob (IFGR) once the REGIME knob is chosen;
     that removes the time-of-day drift a fixed IFGR suffers."
+  - "(measured) Settings written through raw SoapySDR read back truthfully and take effect
+    (FM notch: -41 dB at 100 MHz). Inside GNU Radio, gr-soapy's write_setting() works but its
+    read_setting() returned True for a boolean regardless of state: do not use it for readback."
+  - "(measured) A gr-soapy 'setting' COMMAND MESSAGE stops the source block on this driver
+    (settings are device-level; gr-soapy applies them per channel and does not catch the throw)."
   - "Do not terminate a process that is streaming from this device; the vendor service can wedge."

@@ -62,8 +62,13 @@ These open SoapySDR in-process and write `rfgain_sel` with no readback.
   when it cannot. (Measured during this work: `rfgain_sel` and the gain element
   `RFGR` are the same control, and its range on the RSPdx is 0-27, not 0-9.)
 - **Chains are stopped with a hard `terminate()` while streaming.**
-  `attach.graceful_stop()` sends CTRL_BREAK / SIGINT first; `tv_live.py` already
-  has the handler for it.
+  `attach.graceful_stop()` sends CTRL_BREAK / SIGINT first, and `tv_live.py` has a
+  handler for it - but **measured: it answered in only 11 of 27 restarts.** The
+  rest timed out and were terminated. Likely cause: the main thread blocks in the
+  flowgraph's `wait()`, where a Python signal handler cannot run. Fix in the
+  decoder: wait in a loop (`while not stop_event.wait(0.2)`), or watch a stop file
+  as the rig's other tools do. **Do this first**; it is small, and every
+  restart-per-cell calibration until then is a hard kill of a streaming process.
 - **A stale second copy of `adaptive-tv/` exists beside the repository**, and
   `config_shootout.py` still points into it. Pick one before migrating.
 - `config_shootout` scores by the dial across configs that change what the dial
