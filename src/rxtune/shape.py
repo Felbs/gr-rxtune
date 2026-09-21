@@ -141,6 +141,14 @@ def classify(result: SearchResult, spec: DialSpec, gain_of: Callable[[Point], fl
 
     rails_everywhere = _nz(b.overload) >= th["rails_present"] and base >= th["rails_present"]
 
+    if cliff is None and b.alive is False:
+        # PLUMBING is a claim that the dial is ABOVE the decode threshold. With no
+        # threshold given and nothing decoding anywhere, that claim cannot be made.
+        # (Found on hardware: a 7.6 dB best cell on a weak carrier was called plumbing.)
+        return ShapeReport(Shape.BELOW_CLIFF, "a dial peak exists but nothing decodes at any setting, "
+                           "and no decode threshold was given: most likely the signal is under the "
+                           "decoder's threshold (give the dial a cliff to rule out a downstream fault)",
+                           notes, ev)
     if above:
         if b.alive is False:
             return ShapeReport(Shape.PLUMBING, "the dial is healthy and nothing is decoded: the fault "

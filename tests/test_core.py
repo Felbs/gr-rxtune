@@ -362,3 +362,17 @@ def test_a_pick_that_does_not_reproduce_is_replaced():
     assert res.best.setting["g"] == 2, res.log
     assert any("did not reproduce" in line for line in res.log)
     assert res.best.phase == "confirm" and res.best.score == 22.0
+
+
+def test_plumbing_is_never_claimed_without_a_known_cliff():
+    from rxtune.dial import Reading
+    from rxtune.verdict import judge
+    spec = DialSpec("SNR", cliff=None, settle_s=0, window_s=1)
+    axis = Axis.of(KnobSpec("g", "range", 0, 3, 1, sense="gain"))
+
+    def measure(setting):
+        v = [3.0, 7.6, 6.0, 2.0][setting["g"]]
+        return Reading(value=v, score=v, n=20, p10=v - 0.2, p90=v + 0.2, alive=False)
+    t = Tuner([axis], spec, confirm=False)
+    v = judge(t.run(measure), spec, t.gain_of)
+    assert v.shape is Shape.BELOW_CLIFF and not v.ok
