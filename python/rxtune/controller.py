@@ -85,6 +85,7 @@ class controller(gr.basic_block):
         self.verdict = None
         self.warnings = []
         self.have_liveness = False
+        self._direct = None
         self._readback_seen = set()
         self._last_live = None
         self._ema = None
@@ -140,6 +141,11 @@ class controller(gr.basic_block):
                 value = d.get("value")
                 if self.acc is not None:
                     self.acc.add_level(d, now)
+                if d.get("cell_done") and self.state == SEARCHING and self.acc is not None:
+                    # an aggregated result for the WHOLE cell (rxtune Capture Dial): close
+                    # the cell now; it carries its own n / p10 / p90
+                    self._direct = d
+                    return
             else:
                 value = d
             try:
@@ -195,11 +201,29 @@ class controller(gr.basic_block):
                 now = time.monotonic()
                 if self.have_liveness and self._last_live is not None:
                     self.acc.add_liveness(self._last_live, now)   # a counter that stopped is evidence too
-                if self.acc.done(now):
+                if self.acc.done(now) or self._direct is not None:
                     reading = self.acc.result(now)
+                    reading = self._apply_direct(reading)
                     self.acc = None
                     self._status("cell done", reading)
                     self._advance(self.tuner.report(reading))
+
+    def _apply_direct(self, reading):
+        d, self._direct = self._direct, None
+        if not d:
+            return reading
+        reading.n = int(d.get("n", 0) or 0)
+        reading.note = str(d.get("note", ""))
+        if d.get("clip") is not None:
+            reading.overload = 1.0 if float(d["clip"]) > 1e-3 else 0.0
+        v = d.get("value")
+        if isinstance(v, (int, float)) and reading.n >= 1:
+            reading.value = float(v)
+            reading.score = self.spec.score(reading.value)
+            a = self.spec.score(float(d.get("p10", v)))
+            b = self.spec.score(float(d.get("p90", v)))
+            reading.p10, reading.p90 = min(a, b), max(a, b)
+        return reading
 
     def _advance(self, setting):
         if setting is None:
@@ -207,7 +231,12 @@ class controller(gr.basic_block):
         setting = dict(setting)
         scale = setting.pop("__window_scale__", 1.0)
         self.pending = setting
+        self._direct = None
         settle = self._write({**self.fixed, **setting})
+        self.message_port_pub(pmt.intern("status"), pmt.to_pmt(_plain(
+            {"state": self.state, "reason": "cell start", "setting": setting, "settle_s": settle,
+             "window_scale": scale, "cell": len(self.tuner.result.points) + 1,
+             "mode": "device-handle" if self.frontend is not None else "message"})))
         self.acc = Accumulator(self.spec, time.monotonic(), settle_s=self.spec.settle_s + settle,
                                window_s=self.spec.window_s * scale)
 

@@ -121,9 +121,68 @@ def build(qt):
     }, name
 
 
+def build_atsc3():
+    """A REAL radio: ATSC 3.0 (NextGen TV) on an SDRplay, judged by an external
+    receiver's own offline tools. Nothing about any station is stored in the file:
+    frequency, antenna port and the receiver's location are command-line parameters."""
+    R1, R2 = 230, 640
+    axes = ('[{"name": "gain:RFGR", "lo": 0, "hi": 12, "step": 1, "sense": "reduction"}, '
+            '{"name": "gain:IFGR", "lo": 20, "hi": 59, "step": 1, "sense": "reduction"}]')
+    b = [
+        blk("samp_rate", "variable", 230, 12, value="6.912e6"),
+        blk("freq", "parameter", 340, 12, label="Channel centre (Hz)", type="eng_float", value="600e6",
+            short_id="f"),
+        blk("antenna", "parameter", 520, 12, label="Antenna port", type="str", value='"Antenna A"',
+            short_id="a"),
+        blk("receiver_dir", "parameter", 690, 12, label="ATSC 3.0 receiver tree", type="str", value='"."',
+            short_id="r"),
+        blk("py", "parameter", 900, 12, label="Python for the receiver", type="str", value='"python"',
+            short_id="p"),
+        blk("judges", "variable", 1080, 12, value="rxtune.recipes.atsc3(receiver_dir, py)",
+            comment="(score, prove): the receiver's own tools"),
+        blk("import_recipes", "import", 1080, 110, imports="import rxtune.recipes"),
+        blk("note_radio", "note", 8, R1 - 75, note="1. THE RADIO"),
+        blk("sdr", "soapy_sdrplay_source", 8, R1, type="fc32", samp_rate="samp_rate", antenna="antenna",
+            center_freq="freq", agc=False, gain=20, lna_state=4,
+            comment="gains arrive on 'cmd', per element"),
+        blk("spectrum", "qtgui_freq_sink_x", 330, R1 - 60, type="complex", name='"ATSC 3.0 carrier (baseband)"',
+            fftsize=2048, fc=0, bw="samp_rate", average=0.05, gui_hint="0,0,1,1"),
+        blk("waterfall", "qtgui_waterfall_sink_x", 330, R1 + 110, type="complex", name='"waterfall"',
+            fftsize=2048, fc=0, bw="samp_rate", gui_hint="0,1,1,1"),
+        blk("note_loop", "note", 8, R2 - 75, note="2. JUDGE + LOOP"),
+        blk("capture", "rxtune_capture_dial", 330, R2, samp_rate="samp_rate", secs=5.0, settle_s=1.0,
+            path="rxtune_capture.cs16", score="judges[0]", prove="judges[1]",
+            comment="record 5 s per cell; SNR off the dummy cells + a real decode"),
+        blk("ctl", "rxtune_controller", 650, R2, axes=axes, dialect="soapy", dial_name="SNR",
+            settle_s=1.0, window_s=240, min_samples=1, coarse_points=3, max_cells=22,
+            comment="Window is a ceiling: cells close when the judgement arrives"),
+        blk("dash", "rxtune_dashboard", 1000, R2, label="rxtune: ATSC 3.0", units="dB", dial_max=30,
+            gui_hint="1,0,1,2"),
+        blk("debug", "blocks_message_debug", 1000, R2 + 170, en_uvec=True),
+    ]
+    c = [["sdr", "0", "spectrum", "0"], ["sdr", "0", "waterfall", "0"], ["sdr", "0", "capture", "0"],
+         ["ctl", "status", "capture", "status"], ["capture", "dial", "ctl", "dial"],
+         ["capture", "liveness", "ctl", "liveness"], ["ctl", "cmd", "sdr", "cmd"],
+         ["capture", "dial", "dash", "dial"], ["ctl", "status", "dash", "status"],
+         ["ctl", "verdict", "dash", "verdict"], ["ctl", "verdict", "debug", "print"]]
+    name = "atsc3_live"
+    return {
+        "options": {"parameters": {"id": name, "title": "rxtune on a real radio: ATSC 3.0",
+                                   "author": "gr-rxtune", "generate_options": "qt_gui",
+                                   "output_language": "python", "category": "[GRC Hier Blocks]",
+                                   "run": "True", "run_options": "prompt", "gen_cmake": "On",
+                                   "description": "The controller tunes an SDRplay's gain elements by "
+                                                  "message while an external ATSC 3.0 receiver judges "
+                                                  "each capture."},
+                    "states": {"bus_sink": False, "bus_source": False, "bus_structure": None,
+                               "coordinate": [8, 8], "rotation": 0, "state": "enabled"}},
+        "blocks": b, "connections": c,
+        "metadata": {"file_format": 1, "grc_version": "3.10.12.0"},
+    }, name
+
+
 if __name__ == "__main__":
-    for qt in (True, False):
-        doc, name = build(qt)
+    for doc, name in (build(True), build(False), build_atsc3()):
         path = os.path.join(ROOT, "examples", name + ".grc")
         with open(path, "w", encoding="utf-8") as f:
             yaml.safe_dump(doc, f, sort_keys=False, default_flow_style=None, width=110)

@@ -103,7 +103,8 @@ def survey(frontend: Frontend, dial: Dial, liveness: Optional[Liveness] = None, 
             ranked.append((0.0, path))
             break
         quick = tune(frontend, dial, liveness, search=search, fixed={**fixed, **path}, clock=clock,
-                     coarse_points=3, max_cells=9, **{k: v for k, v in tune_kw.items() if k != "max_cells"})
+                     coarse_points=3, max_cells=9,
+                     **{k: v for k, v in tune_kw.items() if k not in ("max_cells", "coarse_points")})
         v = quick.verdict
         key = (v.ok, v.dial is not None, v.evidence.get("best_score", float("-inf")))
         ranked.append((key, path))

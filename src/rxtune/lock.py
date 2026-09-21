@@ -50,16 +50,25 @@ class ModuleLock:
         spec.loader.exec_module(self.mod)
         self.owner, self.purpose, self.priority, self.wait_s = owner, purpose, priority, wait_s
         self.held = False
+        self._depth = 0
 
     def __enter__(self):
+        # RE-ENTRANT: a script holds the lock for its whole session and hands the same
+        # object to tune(), which enters it again. Without the depth count the inner
+        # exit released the radio while the script was still streaming from it.
+        self._depth += 1
+        if self._depth > 1:
+            return self
         if not self.mod.acquire(self.owner, self.purpose, self.priority, wait_s=self.wait_s):
             holder = getattr(self.mod, "status", lambda: "?")()
+            self._depth = 0
             raise Yielded(f"radio is busy and did not free up in {self.wait_s:g}s: {holder}")
         self.held = True
         return self
 
     def __exit__(self, *exc):
-        if self.held:
+        self._depth = max(0, self._depth - 1)
+        if self._depth == 0 and self.held:
             self.mod.release(self.owner)
             self.held = False
         return False

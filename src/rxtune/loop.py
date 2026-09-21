@@ -69,7 +69,8 @@ def tune(frontend: Frontend, dial: Dial, liveness: Optional[Liveness] = None, *,
          pick: str = "headroom", coarse_points: int = 5, max_cells: int = 120,
          on_cell: Optional[Callable[[Setting, Reading], None]] = None,
          agc_off: bool = True, thresholds: Optional[dict] = None,
-         health: Optional[Callable[[], Optional[str]]] = None) -> TuneReport:
+         health: Optional[Callable[[], Optional[str]]] = None,
+         measurer=None) -> TuneReport:
     """Search the named knobs (default: every fast gain knob the frontend has),
     holding `fixed` constant. `start` restricts a knob's COARSE span; the
     staircase rule extends it if the answer lies outside."""
@@ -87,7 +88,10 @@ def tune(frontend: Frontend, dial: Dial, liveness: Optional[Liveness] = None, *,
         if hasattr(frontend, "verify_agc_off") and not frontend.verify_agc_off():
             warnings.append("hardware AGC still appears active after being switched off")
 
-    measurer = Measurer(dial, frontend, liveness, clock=clock, heartbeat=lock.heartbeat)
+    if measurer is None:
+        measurer = Measurer(dial, frontend, liveness, clock=clock, heartbeat=lock.heartbeat)
+    elif getattr(measurer, "heartbeat", "absent") is None:
+        measurer.heartbeat = lock.heartbeat          # a custom measurer: anything with .measure()
     current: Setting = {}
     failed: Dict[str, int] = {}
     tuner = Tuner(axes, dial.spec, coarse_points=coarse_points, max_cells=max_cells,

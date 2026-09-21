@@ -61,6 +61,7 @@ class SoapyFrontend:
         self._sinkq: "queue.Queue[bytes]" = queue.Queue(maxsize=256)
         self._sink: Optional[BinaryIO] = None
         self.samples = 0
+        self._sunk = 0
         self.dropped_buffers = 0
         self.overflows = 0
         self.t_start = 0.0
@@ -165,8 +166,7 @@ class SoapyFrontend:
         self.samples, self.t_start = 0, time.monotonic()
         self._thread = threading.Thread(target=self._pump, args=(mtu,), daemon=True)
         self._thread.start()
-        if sink is not None:
-            threading.Thread(target=self._drain, daemon=True).start()
+        threading.Thread(target=self._drain, daemon=True).start()
 
     def _pump(self, mtu: int) -> None:
         S = self.S
@@ -185,6 +185,7 @@ class SoapyFrontend:
             self.samples += n
             n_buf += 1
             if self._sink is not None:
+                self._sunk += n
                 view = buf[:2 * n] if cs16 else buf[:n]
                 chunk = self._transform(view) if self._transform else view.tobytes()
                 try:
@@ -211,11 +212,44 @@ class SoapyFrontend:
                 chunk = self._sinkq.get(timeout=0.2)
             except queue.Empty:
                 continue
+            sink = self._sink
+            if sink is None:
+                continue
             try:
-                self._sink.write(chunk)
+                sink.write(chunk)
             except (BrokenPipeError, OSError, ValueError):
                 self._sink = None
-                return
+
+    def record(self, path: str, secs: float) -> dict:
+        """Write `secs` of the running stream to `path` (raw, in the stream's format)
+        and say whether the file is whole. For decoders that score a CAPTURE rather
+        than a live stream. samples == wall x fs, or the capture is void."""
+        if self._stream is None:
+            raise RuntimeError("start() the stream before record()")
+        fs = self.dev.getSampleRate(self.RX, self.ch)
+        while not self._sinkq.empty():                 # nothing stale from before this cell
+            try:
+                self._sinkq.get_nowait()
+            except queue.Empty:
+                break
+        drops0, over0 = self.dropped_buffers, self.overflows
+        with open(path, "wb") as f:
+            self._sunk = 0
+            self._sink = f
+            t0 = time.monotonic()
+            time.sleep(secs)
+            self._sink = None
+            wall = time.monotonic() - t0
+            deadline = time.monotonic() + 5.0
+            while not self._sinkq.empty() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            time.sleep(0.05)
+        ratio = self._sunk / (wall * fs)
+        out = {"path": path, "samples": self._sunk, "secs": wall, "ratio": ratio,
+               "dropped_buffers": self.dropped_buffers - drops0,
+               "overflows": self.overflows - over0}
+        out["ok"] = abs(ratio - 1.0) < 0.03 and out["dropped_buffers"] == 0
+        return out
 
     def level(self) -> Optional[dict]:
         with self._look_lock:

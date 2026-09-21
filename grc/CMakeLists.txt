@@ -12,4 +12,5 @@ install(FILES
     rxtune_msg_setter.block.yml
     rxtune_dial_from_tag.block.yml
     rxtune_dial_adapter.block.yml
+    rxtune_capture_dial.block.yml
     rxtune_dashboard.block.yml DESTINATION share/gnuradio/grc/blocks)

@@ -174,3 +174,36 @@ def test_a_dead_decoder_is_never_reported_as_an_rf_verdict():
     with pytest.raises(DecoderDied):
         tune(rx, rx, rx, clock=rx.clock, fixed={"antenna": "A"}, health=dec.health)
     dec.stop()
+
+
+def test_capture_per_cell_measurer(tmp_path):
+    """Mode (a), capture flavour: record at each cell, let offline tools judge the file."""
+    from rxtune.attach import CaptureMeasurer
+
+    class Radio(SimReceiver):
+        def record(self, path, secs):
+            m = self._model()
+            Path(path).write_text(f"{min(m['snr'], 30.0)}")
+            return {"ok": self.state["gain:IF"] != 49, "ratio": 1.0}     # one cell drops samples
+
+    rx = Radio("healthy")
+    spec = DialSpec("SNR", "dB", cliff=15.2, settle_s=0.0, window_s=0.0, min_samples=3)
+
+    def score(path):
+        v = float(Path(path).read_text())
+        return None if v < 4 else {"value": v, "p10": v - 0.2, "p90": v + 0.2, "n": 12}
+
+    def prove(path):
+        v = float(Path(path).read_text())
+        return {"alive": v >= 15.2, "rate": 100.0 if v >= 15.2 else 0.0, "note": "decoded the capture"}
+
+    m = CaptureMeasurer(rx, spec, str(tmp_path / "cell.iq"), 0.0, score, prove, poll_s=0.001)
+    from rxtune.dial import CallableDial
+    dial = CallableDial(spec, lambda: None)               # the measurer supplies the readings
+    for k in rx._specs:
+        rx._specs[k] = rx._specs[k].with_(settle_s=0.0)
+    rep = tune(rx, dial, None, fixed={"antenna": "A"}, measurer=m, max_cells=30)
+    assert rep.verdict.shape.value == "HEALTHY" and rep.verdict.ok
+    assert rep.verdict.dial > 29 and rep.verdict.alive
+    assert m.void_captures >= 1                           # the void capture was not scored...
+    assert all(p.reading.value is None for p in rep.result.points if p.setting["gain:IF"] == 49)

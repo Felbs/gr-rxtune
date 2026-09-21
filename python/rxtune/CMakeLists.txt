@@ -24,6 +24,8 @@ gr_python_install(FILES __init__.py
     msg_setter.py
     dial_from_tag.py
     dial_adapter.py
+    capture_dial.py
+    _pmt.py
     dashboard.py DESTINATION ${GR_PYTHON_DIR}/gnuradio/rxtune)
 
 ########################################################################

@@ -42,7 +42,7 @@ THRESHOLDS: Dict[str, float] = {
     "clip_high": 0.30,        # share of looks with clipping = steady overload
     "rails_present": 0.15,    # share of looks with clipping = rail transients present
     "fade_spread": 3.0,       # p90-p10 at a FIXED setting
-    "island_width_db": 9.0,   # width of the within-1.5 region, in gain dB
+    "island_width_db": 9.0,   # width of the usable region (above the cliff), in gain dB
     "island_within": 1.5,
     "starved_level_db": -22.0,  # max raw level over the whole span; device-dependent, a
                                 # profile may override it
@@ -129,8 +129,13 @@ def classify(result: SearchResult, spec: DialSpec, gain_of: Callable[[Point], fl
                  else f"from {first.setting} upward")      # no sample view: name the setting
         notes.append(f"overload ridge: the dial collapses {where}")
 
-    # width of the good region around the best, in gain dB
-    near = [p for p in scored if top - p.score <= th["island_within"]]
+    # Width of the USABLE region around the best, in gain dB. With a known cliff that
+    # is everything that clears it (a sharp peak with 9 dB of margin is not fragile: a
+    # drift costs margin, not the signal). Without one, the near-best region.
+    if cliff is not None and above:
+        near = [p for p in scored if p.score >= cliff and p.reading.alive is not False]
+    else:
+        near = [p for p in scored if top - p.score <= th["island_within"]]
     width = (max(map(gain_of, near)) - min(map(gain_of, near))) if len(near) > 1 else 0.0
     ev["good_region_width_db"] = width
 

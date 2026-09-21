@@ -20,6 +20,7 @@ from .dial_probe import dial_probe
 from .dial_from_tag import dial_from_tag
 from .dial_adapter import dial_adapter
 from .msg_setter import msg_setter
+from .capture_dial import capture_dial
 
 def __getattr__(name):
     # Qt is optional and LAZY: the controller must run headless (a Pi with no

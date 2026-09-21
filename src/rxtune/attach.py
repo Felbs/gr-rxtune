@@ -74,6 +74,43 @@ class LineScraper:
             return self._live
 
 
+class RateScraper(LineScraper):
+    """A RATE dial: decoded messages per second, from lines that only appear when a
+    message passed its CRC (ADS-B, AIS, pagers). It is zero until decoding starts, so
+    its DialSpec must say continuous_below_cliff=False. Every counted line is also
+    liveness: a CRC-valid message IS decoded content."""
+
+    def __init__(self, spec: DialSpec, line_re: str):
+        super().__init__(spec, r"(?!x)x", None)
+        self._line_re = re.compile(line_re)
+        self._n = 0
+        self._t_last: Optional[float] = None
+        self._n_last = 0
+
+    def feed(self, line: str) -> None:
+        if self._line_re.search(line):
+            with self._lock:
+                self._n += 1
+        else:
+            super().feed(line)                         # keep a tail of everything else for health()
+
+    def read(self) -> Optional[float]:
+        now = time.monotonic()
+        with self._lock:
+            n = self._n
+        if self._t_last is None or now - self._t_last < 0.5:
+            if self._t_last is None:
+                self._t_last, self._n_last = now, n
+            return None
+        rate = (n - self._n_last) / (now - self._t_last)
+        self._t_last, self._n_last = now, n
+        return rate
+
+    def count(self) -> int:
+        with self._lock:
+            return self._n
+
+
 class FileGrowth:
     """Liveness from a decoder's OUTPUT file: decoded audio, a transport stream.
     Bytes that were actually written are content; a status line is not."""
@@ -192,6 +229,82 @@ class PipeDecoder:
             except subprocess.TimeoutExpired:
                 self.proc.kill()
         self.proc = None
+
+
+class CaptureMeasurer:
+    """Mode (a), capture flavour: the loop owns the radio, RECORDS a few seconds
+    at each setting, and the decoder's own offline tools judge the file. For
+    decoders whose honest quality number exists only offline, and for anything
+    that can replay a capture faster than it can be restarted on the air.
+
+      score(path) -> {"value", "p10", "p90", "n"} or None     the dial
+      prove(path) -> {"alive": bool, "rate": float, "note": str} or None   content
+
+    Both run concurrently on the same capture. A capture that is not whole
+    (samples != wall x fs) is void and is scored as nothing."""
+
+    def __init__(self, frontend, spec: DialSpec, path: str, secs: float,
+                 score: Callable[[str], Optional[dict]],
+                 prove: Optional[Callable[[str], Optional[dict]]] = None,
+                 heartbeat: Optional[Callable[[], None]] = None, poll_s: float = 0.1):
+        self.poll_s = poll_s
+        self.frontend, self.spec, self.path, self.secs = frontend, spec, path, secs
+        self.score, self.prove, self.heartbeat = score, prove, heartbeat
+        self.void_captures = 0
+
+    def _beat_while(self, threads) -> None:
+        while any(t.is_alive() for t in threads):
+            if self.heartbeat:
+                self.heartbeat()
+            time.sleep(self.poll_s)
+
+    def measure(self, extra_settle_s: float = 0.0, window_scale: float = 1.0):
+        from .dial import Reading
+        time.sleep(max(self.spec.settle_s, extra_settle_s))
+        self.frontend.level()                                   # discard the pre-settle look
+        box: dict = {}
+        rec = threading.Thread(target=lambda: box.update(
+            rec=self.frontend.record(self.path, self.secs * window_scale)))
+        rec.start()
+        looks = []
+        while rec.is_alive():
+            look = self.frontend.level()
+            if look:
+                looks.append(look)
+            if self.heartbeat:
+                self.heartbeat()
+            time.sleep(self.poll_s)
+        r = Reading(value=None, t=time.time())
+        if looks:
+            lv = sorted(l["level_db"] for l in looks)
+            r.level_db = float(lv[len(lv) // 2])
+            r.overload = sum(1 for l in looks if l.get("clip", 0) > 1e-4) / len(looks)
+        if not box.get("rec", {}).get("ok"):
+            self.void_captures += 1
+            r.note = f"capture void: {box.get('rec')}"
+            if self.prove is not None:
+                r.alive = False
+            return r
+        jobs = [threading.Thread(target=lambda: box.update(score=self.score(self.path)))]
+        if self.prove is not None:
+            jobs.append(threading.Thread(target=lambda: box.update(prove=self.prove(self.path))))
+        for j in jobs:
+            j.start()
+        self._beat_while(jobs)
+        sc = box.get("score")
+        if sc and sc.get("value") is not None and sc.get("n", 0) >= max(1, self.spec.min_samples):
+            r.value = float(sc["value"])
+            r.score = self.spec.score(r.value)
+            r.n = int(sc.get("n", 0))
+            lo, hi = sc.get("p10", r.value), sc.get("p90", r.value)
+            a, b = self.spec.score(lo), self.spec.score(hi)
+            r.p10, r.p90 = min(a, b), max(a, b)
+        if self.prove is not None:
+            pv = box.get("prove") or {}
+            r.alive = bool(pv.get("alive", False))
+            r.live_rate = float(pv.get("rate", 0.0))
+            r.note = str(pv.get("note", ""))
+        return r
 
 
 class RestartPerCell:
