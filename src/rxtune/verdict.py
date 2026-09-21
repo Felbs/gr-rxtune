@@ -102,6 +102,8 @@ def observed_cliff(result: SearchResult, spec: DialSpec, max_spread: float = 1.5
     return max(dead), min(live)
 
 
+MIN_COUNTED = 200        # decoded messages across a run before a rate dial may rank settings
+
 RECOMMENDABLE = {Shape.HEALTHY, Shape.ISLAND, Shape.IMPULSE, Shape.FADING}
 
 
@@ -136,6 +138,18 @@ def judge(result: SearchResult, spec: DialSpec, gain_of: Callable[[Point], float
         rep.evidence["observed_cliff_lo"], rep.evidence["observed_cliff_hi"] = lo, hi
         rep.notes.append(f"observed decode threshold: between {lo:.1f} and {hi:.1f} {u} (steady cells "
                          f"that did not / did decode) -> about {b.score - (lo + hi) / 2:+.1f} {u} of margin")
+
+    # MINIMUM EVIDENCE for counting dials (autogain1090's "fewer than 1000 messages: do
+    # nothing"). A message-rate dial ranks settings by Poisson counts; with a handful of
+    # messages in the whole run the ranking is noise. (Found on hardware: 2 ADS-B messages
+    # in 22 cells at 1 a.m.)
+    if not spec.continuous_below_cliff:
+        counted = sum(p.reading.n for p in result.points if p.reading.alive and p.phase != "confirm")
+        rep.evidence["messages_counted"] = float(counted)
+        if counted < MIN_COUNTED:
+            recommend = False
+            rep.notes.append(f"only {counted} decoded message(s) in the whole run (< {MIN_COUNTED}): "
+                             "too few to rank settings. Repeat with more traffic or longer windows.")
 
     confidence = "closed-loop" if closed_loop else "open-loop (knob writes not read back)"
     if b is not None and b.n < 2 * spec.min_samples:

@@ -301,6 +301,11 @@ class SoapyFrontend:
 
     def snapshot(self, n: int = 1 << 17) -> np.ndarray:
         """One contiguous complex capture (stream must NOT be running)."""
+        if self._stream is not None:
+            # A second stream on a device that is already streaming hard-crashes some
+            # drivers (SoapySDRPlay: the process dies with no traceback and the device
+            # stays "unavailable" for minutes - found on hardware).
+            raise RuntimeError("snapshot() while streaming: stop() first")
         st = self.dev.setupStream(self.RX, "CF32", [self.ch])
         self.dev.activateStream(st)
         out = np.empty(n, np.complex64)
@@ -319,6 +324,8 @@ class SoapyFrontend:
 
     def census(self, nfft: int = 4096) -> dict:
         """Interferer census: what else is in the passband, relative to the floor."""
+        if self._stream is not None:
+            return {"ok": False, "why": "streaming: census needs the radio to itself"}
         x = self.snapshot(nfft * 32)
         if len(x) < nfft:
             return {"ok": False}

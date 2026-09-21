@@ -135,8 +135,13 @@ def main():
         timer.start(500)
         app.exec_()
     size = os.path.getsize(iq) if os.path.exists(iq) else 0
-    if os.path.exists(iq):
-        os.unlink(iq)
+    for _ in range(20):                       # the receiver may hold the file a moment longer
+        try:
+            if os.path.exists(iq):
+                os.unlink(iq)
+            break
+        except PermissionError:
+            time.sleep(1.0)
     print(f"ran {time.time() - t0:.0f} s; streamed {size / 1e9:.1f} GB of IQ to the receiver; "
           f"receiver exit code {state['rx'].returncode if state['rx'] else None}")
     return 0

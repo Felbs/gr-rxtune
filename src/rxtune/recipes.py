@@ -67,3 +67,51 @@ def atsc3(receiver_dir: str, python: str = "python", rate: float = ATSC3_RATE,
                 "count": clean, "note": f"BCH-clean {clean}/{d['fec_total']} ({100 * share:.1f}%)"}
 
     return score, prove
+
+
+_MODES_SNIPPET = (
+    "import sys, json, numpy as np; sys.path.insert(0, sys.argv[1]); import adsb; "
+    "raw = np.fromfile(sys.argv[2], np.int16); "
+    "iq = ((raw[0::2].astype(np.float32) + 1j * raw[1::2].astype(np.float32)) / 32768.0).astype(np.complex64); "
+    "r = adsb.analyze(iq, do_rescue=False); "
+    "json.dump({'crc_ok': int(r['crc_ok']), 'candidates': int(r['candidates']), "
+    "'secs': len(iq) / 2.0e6}, open(sys.argv[3], 'w'))")
+
+
+def modes_analyze(tools_dir: str, python: str = "python", tag: str = "rxtune",
+                  timeout: float = 120.0) -> Tuple[Callable, Callable]:
+    """ADS-B / Mode S, for a decoder module `adsb.py` exposing `analyze(iq, do_rescue)`
+    over 2 MS/s complex samples and returning {"crc_ok", "candidates"}.
+
+    dial     = CRC-valid extended-squitter messages per second. A BLIND dial: it is zero
+               until decoding starts (DialSpec.continuous_below_cliff must be False).
+    liveness = the same count: a message that passed its 24-bit CRC is decoded content.
+    One analysis serves both, cached per capture."""
+    out_json = os.path.join(tempfile.gettempdir(), f"{tag}_modes.json")
+    cache: dict = {}
+
+    def _analyze(path: str) -> Optional[dict]:
+        key = (path, os.path.getmtime(path), os.path.getsize(path))
+        if cache.get("key") != key:
+            cache["key"], cache["val"] = key, _run_json(
+                [python, "-c", _MODES_SNIPPET, tools_dir, path, out_json], tools_dir, out_json, timeout)
+        return cache["val"]
+
+    lock = __import__("threading").Lock()
+
+    def score(path: str) -> Optional[dict]:
+        with lock:
+            d = _analyze(path)
+        if not d:
+            return None
+        rate = d["crc_ok"] / max(d["secs"], 1e-9)
+        return {"value": rate, "p10": rate, "p90": rate, "n": max(1, d["crc_ok"])}
+
+    def prove(path: str) -> dict:
+        with lock:
+            d = _analyze(path)
+        n = int(d["crc_ok"]) if d else 0
+        return {"alive": n > 0, "count": n, "rate": n / max(d["secs"], 1e-9) if d else 0.0,
+                "note": f"{n} CRC-valid of {d['candidates'] if d else 0} candidates"}
+
+    return score, prove

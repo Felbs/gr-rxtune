@@ -109,3 +109,13 @@ def test_graceful_stop_asks_first():
     assert time.time() - t0 < 6.0
     assert p.stdout.read().strip() == b"closed the radio", "the decoder was killed, not asked"
     assert p.returncode == 0
+
+
+def test_rate_scraper_counts_crc_valid_lines_only():
+    from rxtune.attach import RateScraper
+    from rxtune.dial import CRC_RATE
+    sc = RateScraper(CRC_RATE, r"^\*[0-9A-Fa-f]{14,28};")
+    for line in ("*8D4840D6202CC371C32CE0576098;", "noise", "*02E197B00179C3;", "*zz;"):
+        sc.feed(line)
+    assert sc.count() == 2 and sc.tail[-1] == "*zz;"
+    assert sc.read() is None                       # the first read only starts the clock
