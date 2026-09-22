@@ -29,6 +29,9 @@ def enumerate_devices(args: str = "") -> List[dict]:
     return [dict(d) for d in S.Device.enumerate(args)]
 
 
+_CLOSE = object()                 # queued after a record()'s last chunk: the drain closes the file
+
+
 class SoapyFrontend:
     def __init__(self, args: str = "", channel: int = 0, rate: Optional[float] = None,
                  freq: Optional[float] = None, bandwidth: Optional[float] = None,
@@ -60,6 +63,8 @@ class SoapyFrontend:
         self._level_every = max(1, level_every)
         self._sinkq: "queue.Queue[bytes]" = queue.Queue(maxsize=256)
         self._sink: Optional[BinaryIO] = None
+        self._rec_file: Optional[BinaryIO] = None
+        self._closed = threading.Event()
         self.samples = 0
         self._sunk = 0
         self.dropped_buffers = 0
@@ -212,6 +217,16 @@ class SoapyFrontend:
                 chunk = self._sinkq.get(timeout=0.2)
             except queue.Empty:
                 continue
+            if chunk is _CLOSE:                        # end of a record(): close ITS file, here
+                f = self._rec_file
+                self._rec_file = None
+                if f is not None:
+                    try:
+                        f.close()
+                    except OSError:
+                        pass
+                self._closed.set()
+                continue
             sink = self._sink
             if sink is None:
                 continue
@@ -233,17 +248,27 @@ class SoapyFrontend:
             except queue.Empty:
                 break
         drops0, over0 = self.dropped_buffers, self.overflows
-        with open(path, "wb") as f:
-            self._sunk = 0
-            self._sink = f
-            t0 = time.monotonic()
-            time.sleep(secs)
-            self._sink = None
-            wall = time.monotonic() - t0
-            deadline = time.monotonic() + 5.0
-            while not self._sinkq.empty() and time.monotonic() < deadline:
-                time.sleep(0.02)
-            time.sleep(0.05)
+        # The drain thread owns the file. Closing it here while chunks were still queued made
+        # the drain's next write raise on a closed file, and the drain's answer to a write error
+        # is to drop the sink - so every LATER cell recorded zero samples ("capture void",
+        # measured on a GPS run whose judge held the GIL for seconds). Now the drain is told
+        # to close the file itself once the queue is empty, and we wait for that.
+        f = open(path, "wb")
+        self._sunk = 0
+        self._closed = threading.Event()
+        self._rec_file = f
+        self._sink = f
+        t0 = time.monotonic()
+        time.sleep(secs)
+        self._sink = None
+        wall = time.monotonic() - t0
+        self._sinkq.put(_CLOSE)                        # after every chunk of this cell
+        if not self._closed.wait(30.0):
+            self.log("record: drain did not close the file in 30 s")
+            try:
+                f.close()
+            except OSError:
+                pass
         ratio = self._sunk / (wall * fs)
         out = {"path": path, "samples": self._sunk, "secs": wall, "ratio": ratio,
                "dropped_buffers": self.dropped_buffers - drops0,
