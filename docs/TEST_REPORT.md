@@ -403,3 +403,33 @@ Two measurement traps found on the way, both fixed in `util/run_hw_qt.py` / docu
 grab cannot see the player's native surface (the pane looked black in the first screenshots); and a
 second listener on the unicast UDP port sees nothing while the player holds it (the first probe read
 0 frames everywhere, even on a flowgraph whose picture was on screen).
+
+## 8. GPS L1 with GPSTuna's acquisition as the judge (2026-09-21)
+
+`examples/hw_gps_capture.py`: capture-per-cell (3 s), the dial is GPSTuna's own acquisition metric
+(correlation peak over second peak) summed over the satellites above its "strong" threshold,
+liveness = at least four such satellites. RSPdx, active patch antenna in an attic, bias-T on
+(a discovered device setting, held in `fixed`, readback-verified).
+
+| | ACQ (sum of peak ratios) | strong satellites | 120 s capture -> `locate.py` fix |
+|---|---|---|---|
+| driver default, IF AGC on (what GPSTuna has always used) | 103.2 | 7-8 | 8 birds, rms 26.2 m, epoch scatter 18.3 m |
+| rxtune pick, AGC off: RFGR 0 / IFGR 46 | 104.8 | 8 | 8 birds, rms 25.5 m, epoch scatter 25.5 m |
+
+**Verdict HEALTHY, and the finding is that there was nothing to win.** The whole LNA-state-0 row
+scores 101-105 from IFGR 20 to 59 - a 40 dB span of IF gain. GPS is noise-limited and the
+correlator does not care about the level until the rails (IFGR 20 read -10.7 dBFS with rails on
+87 % of looks, and still scored 101). Backing the LNA off costs everything: RFGR 9 falls 92 -> 48 -> 0
+across IFGR, RFGR 18 and above see zero satellites at any IFGR. The AGC sits in the flat region, so
+a gain chosen from noise alone happens to be fine here, and the two fixes are the same fix within
+one run's noise. Where the loop would matter for GPS: a radio whose AGC lands in a bad LNA state,
+or a strong neighbour pulling the AGC down. Neither is the case on this antenna. 31 cells, 0 void
+captures, 542 s.
+
+**A real bug in this project, found by this run.** With a judge that holds the interpreter for
+seconds (GPSTuna's acquisition under a 32-thread MKL pool), `SoapyFrontend.record()` closed its file
+while the drain thread still had that cell's chunks queued. The drain's next write raised on the
+closed file, its error handling dropped the sink, and every later cell recorded zero samples: 22
+"void" cells in a row and a verdict (IMPULSE) built on nothing. The drain now owns the record file
+and closes it itself, after a sentinel queued behind the cell's last chunk; the GPS judge pins its
+BLAS threads; 126 tests pass. It never showed on ATSC 3.0 because that judge is a subprocess.

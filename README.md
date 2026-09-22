@@ -158,6 +158,14 @@ which it holds the SoapySDR device itself and reads every write back.
 0.1.0 — first extraction. `docs/TEST_REPORT.md` says exactly what was tested,
 what failed, and what could not be tested and why. Not yet on CGRAN or conda.
 
+## GPS: the loop that found nothing to win
+
+`examples/hw_gps_capture.py` tunes for GPS L1 with GPSTuna's acquisition metric as the dial. Verdict
+HEALTHY, and the map shows why the driver's AGC was already fine: the whole LNA-0 row is flat over
+40 dB of IF gain, and the LNA state is the only knob that matters. Two 120 s position fixes, AGC
+versus the pick, agree within noise. A loop that can say "leave it alone" is worth as much as one
+that finds 3 dB. See the test report.
+
 ## A native receiver in the loop
 
 `examples/atsc1_native_live.grc` puts the controller in the loop on an ATSC 1.0 (8-VSB) receiver made
