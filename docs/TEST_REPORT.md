@@ -379,3 +379,27 @@ python util/hw_soapy_cmd.py --gains IFGR=45 RFGR=3 --antenna "<port>" --setting 
 python examples/hw_nrsc5.py --mhz <station> --antenna "<port>" --nrsc5 <path>
 python examples/hw_atsc_stvt.py --tv-live <path> --rf <channel> --antenna "<port>"
 ```
+
+## 7. The loop on a NATIVE GNU Radio receiver, live (2026-09-21)
+
+`examples/atsc1_native_live.grc`: the production STVT 8-VSB chain (gr-atscplus) with the controller in
+the loop - the Equalizer Probe's decision-directed MER as the dial, the TEI Scrub's clean-packet count
+as liveness, gains to the Soapy source by message - and the television picture playing in the window
+throughout. This is the attachment mode the ATSC 3.0 example could not use (it captures per cell and
+judges offline, ~640 s per verdict).
+
+| run | result |
+|---|---|
+| 1 | HEALTHY, MER 18.9 dB (+3.7 over the 15.2 dB cliff), 21 cells, **142 s** |
+| 2 | HEALTHY, 18.8 dB, 21 cells, 142 s |
+| 3 | HEALTHY, 19.0 dB, 24 cells, 160 s |
+| 4-5 | HEALTHY, 18.9 / 19.0 dB, 21 cells, 142 s (with a stream probe running) |
+
+Picture through the search, measured on the OUTPUT: an independent decoder on the flowgraph's UDP
+transport stream, the pane's player disabled so the probe was the only listener, counted 240 of 240
+video frames in 8 s windows at t = 12, 40, 70, 100 s (mid-search) and 237 at 130 s (after the verdict).
+
+Two measurement traps found on the way, both fixed in `util/run_hw_qt.py` / documented: a Qt widget
+grab cannot see the player's native surface (the pane looked black in the first screenshots); and a
+second listener on the unicast UDP port sees nothing while the player holds it (the first probe read
+0 frames everywhere, even on a flowgraph whose picture was on screen).

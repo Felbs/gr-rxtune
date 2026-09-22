@@ -57,10 +57,15 @@ def main():
         t0 = time.time()
         state = {"verdict": None, "mid": False}
 
+        def shot(path):
+            # the SCREEN region, not a widget grab: a widget grab cannot see a native video surface
+            g = tb.frameGeometry()
+            app.primaryScreen().grabWindow(0, g.x(), g.y(), g.width(), g.height()).save(path)
+
         def finish():
             timer.stop()
             if a.png:
-                tb.grab().save(a.png)
+                shot(a.png)
             tb.stop()
             tb.wait()
             app.quit()
@@ -70,7 +75,7 @@ def main():
             cells = len(tb.dash.heat.cells)
             if a.png_mid and not state["mid"] and cells >= a.mid_cells:
                 state["mid"] = True
-                tb.grab().save(a.png_mid)
+                shot(a.png_mid)
             text = tb.dash.verdict.text()
             if "no verdict yet" not in text and state["verdict"] is None:
                 state["verdict"] = text

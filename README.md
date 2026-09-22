@@ -158,6 +158,15 @@ which it holds the SoapySDR device itself and reads every write back.
 0.1.0 — first extraction. `docs/TEST_REPORT.md` says exactly what was tested,
 what failed, and what could not be tested and why. Not yet on CGRAN or conda.
 
+## A native receiver in the loop
+
+`examples/atsc1_native_live.grc` puts the controller in the loop on an ATSC 1.0 (8-VSB) receiver made
+of GNU Radio blocks ([gr-atscplus](https://github.com/Felbs/Software-TV-Tuner)), tuned live from the
+equalizer's MER while the television picture plays in the window. HEALTHY verdict in 142 s over 21
+gain cells; 240 of 240 video frames decoded in every window sampled during the search.
+
+![atsc1_native_live](docs/img/grc_atsc1_native_live.png)
+
 ## License
 
 GPL-3.0-or-later, to match the GNU Radio ecosystem. See `COPYING`.
