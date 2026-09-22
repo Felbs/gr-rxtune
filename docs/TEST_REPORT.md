@@ -404,16 +404,16 @@ grab cannot see the player's native surface (the pane looked black in the first 
 second listener on the unicast UDP port sees nothing while the player holds it (the first probe read
 0 frames everywhere, even on a flowgraph whose picture was on screen).
 
-## 8. GPS L1 with GPSTuna's acquisition as the judge (2026-09-21)
+## 8. GPS L1 with numpy-gps's acquisition as the judge (2026-09-21)
 
-`examples/hw_gps_capture.py`: capture-per-cell (3 s), the dial is GPSTuna's own acquisition metric
+`examples/hw_gps_capture.py`: capture-per-cell (3 s), the dial is numpy-gps's own acquisition metric
 (correlation peak over second peak) summed over the satellites above its "strong" threshold,
 liveness = at least four such satellites. RSPdx, active patch antenna in an attic, bias-T on
 (a discovered device setting, held in `fixed`, readback-verified).
 
 | | ACQ (sum of peak ratios) | strong satellites | 120 s capture -> `locate.py` fix |
 |---|---|---|---|
-| driver default, IF AGC on (what GPSTuna has always used) | 103.2 | 7-8 | 8 birds, rms 26.2 m, epoch scatter 18.3 m |
+| driver default, IF AGC on (what numpy-gps (formerly numpy-gps) has always used) | 103.2 | 7-8 | 8 birds, rms 26.2 m, epoch scatter 18.3 m |
 | rxtune pick, AGC off: RFGR 0 / IFGR 46 | 104.8 | 8 | 8 birds, rms 25.5 m, epoch scatter 25.5 m |
 
 **Verdict HEALTHY, and the finding is that there was nothing to win.** The whole LNA-state-0 row
@@ -427,7 +427,7 @@ or a strong neighbour pulling the AGC down. Neither is the case on this antenna.
 captures, 542 s.
 
 **A real bug in this project, found by this run.** With a judge that holds the interpreter for
-seconds (GPSTuna's acquisition under a 32-thread MKL pool), `SoapyFrontend.record()` closed its file
+seconds (numpy-gps's acquisition under a 32-thread MKL pool), `SoapyFrontend.record()` closed its file
 while the drain thread still had that cell's chunks queued. The drain's next write raised on the
 closed file, its error handling dropped the sink, and every later cell recorded zero samples: 22
 "void" cells in a row and a verdict (IMPULSE) built on nothing. The drain now owns the record file

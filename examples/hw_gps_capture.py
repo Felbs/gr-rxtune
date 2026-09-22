@@ -1,16 +1,16 @@
 #!/usr/bin/env python
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Tune an SDR for GPS L1 with GPSTuna's own acquisition as the judge.
+"""Tune an SDR for GPS L1 with numpy-gps's own acquisition as the judge.
 
 GPS is 20 dB under the noise floor, so a radio's AGC only ever sees noise: the gain it
 settles on is unrelated to the signal, and a strong out-of-band neighbour drags it down.
 This is the case where the receiver's own dial has to replace the AGC - here the dial is
-GPSTuna's acquisition metric (correlation peak over second peak, per satellite), summed
+numpy-gps's acquisition metric (correlation peak over second peak, per satellite), summed
 over the satellites that clear its "strong" threshold. Capture-per-cell: a few seconds of
 air each, judged offline in a couple of seconds; "alive" = at least four strong birds, the
 minimum for a fix. A real fix (`locate.py --iq`) at the pick is the proof at the end.
 
-  python hw_gps_capture.py --gpstuna /path/to/GPSTuna --antenna "Antenna B" [--baseline-only]
+  python hw_gps_capture.py --gpstuna /path/to/numpy-gps (formerly numpy-gps) --antenna "Antenna B" [--baseline-only]
 
 Bias-T is a discovered device setting and is held ON (readback-verified by the knob) for an
 active antenna, and switched off at the end. Set RXTUNE_LOCK if the radio is shared.
@@ -20,7 +20,7 @@ import json
 import os
 
 # one BLAS thread: the judge runs beside the radio's pump thread, and a 32-thread MKL pool under
-# GPSTuna's acquisition FFTs starved it (measured: every capture after the first came back empty)
+# numpy-gps's acquisition FFTs starved it (measured: every capture after the first came back empty)
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ.setdefault(_v, "2")
 import sys
@@ -78,7 +78,7 @@ def main():
     if not a.gpstuna:
         ap.error("--gpstuna or GPSTUNA_DIR")
     sys.path.insert(0, a.gpstuna)
-    import measure as gt                                          # GPSTuna's own acquisition
+    import measure as gt                                          # numpy-gps's own acquisition
     score, prove, last = make_judges(gt, a.thr)
     cap = os.path.join(tempfile.gettempdir(), "rxtune_gps.cs16")
     spec = DialSpec("ACQ", "sum of peak ratios", cliff=None, settle_s=1.0, window_s=a.secs, min_samples=1,
@@ -96,7 +96,7 @@ def main():
             for k, v in fixed.items():                     # bias-T first, and prove it
                 fe.knobs()[k].set(v)
             print(f"bias-T: {fe.knobs()['setting:biasT_ctrl'].get()}   antenna: {fe.knobs()['antenna'].get()}")
-            # BASELINE: the driver's default, AGC on - what GPSTuna has always captured with
+            # BASELINE: the driver's default, AGC on - what numpy-gps has always captured with
             fe.set_agc(True)
             time.sleep(1.5)
             r = measurer.measure()

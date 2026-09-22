@@ -160,7 +160,7 @@ what failed, and what could not be tested and why. Not yet on CGRAN or conda.
 
 ## GPS: the loop that found nothing to win
 
-`examples/hw_gps_capture.py` tunes for GPS L1 with GPSTuna's acquisition metric as the dial. Verdict
+`examples/hw_gps_capture.py` tunes for GPS L1 with numpy-gps's acquisition metric as the dial. Verdict
 HEALTHY, and the map shows why the driver's AGC was already fine: the whole LNA-0 row is flat over
 40 dB of IF gain, and the LNA state is the only knob that matters. Two 120 s position fixes, AGC
 versus the pick, agree within noise. A loop that can say "leave it alone" is worth as much as one
