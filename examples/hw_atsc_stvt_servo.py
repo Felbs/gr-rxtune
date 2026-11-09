@@ -36,6 +36,7 @@ from rxtune import lock  # noqa: E402
 from rxtune.adapters import ATSC_MER, atsc_scraper  # noqa: E402
 from rxtune.attach import graceful_stop, popen_group  # noqa: E402
 from rxtune.knob import FunctionKnob, KnobSpec, KnobWriteError  # noqa: E402
+from rxtune.measure import Measurer  # noqa: E402
 from rxtune.servo import ServoPolicy, serve  # noqa: E402
 
 SEQ_HEADER = b"\x00\x00\x01\xb3"
@@ -118,9 +119,9 @@ class RetuneFrontend:
         self.writes = 0
         self._specs = [
             KnobSpec("gain:RFGR", "range", rfgr[0], rfgr[1], 1, sense="reduction", role="regime",
-                     settle_s=10.0, note="rfgain_sel (LNA state) via retune.cmd"),
+                     settle_s=4.0, note="rfgain_sel (LNA state) via retune.cmd (gain-only: no re-acquire)"),
             KnobSpec("gain:IFGR", "range", ifgr[0], ifgr[1], 1, sense="reduction", role="level",
-                     settle_s=10.0, note="IFGR via retune.cmd")]
+                     settle_s=4.0, note="IFGR via retune.cmd (gain-only: no re-acquire)")]
         self._key = {"gain:RFGR": "rfgain_sel", "gain:IFGR": "ifgr"}
 
     def knobs(self):
@@ -186,6 +187,9 @@ def main():
     ap.add_argument("--unlock", type=float, default=10.0)
     ap.add_argument("--reprobe", type=float, default=30.0)
     ap.add_argument("--out-dir", required=True, help="live.ts, retune.cmd/ack, chain.log, events.jsonl")
+    ap.add_argument("--min-live", type=int, default=10,
+                    help="sequence headers per window that count as video (a garbage stream of RS-failed "
+                         "packets still yields a few random matches; real video gives about 50 per 12 s)")
     ap.add_argument("--startup", type=float, default=150.0,
                     help="seconds to wait for the chain's retune watcher (the SDRplay API can hold the device ~60 s after a previous chain)")
     a = ap.parse_args()
@@ -261,7 +265,8 @@ def main():
     before = meter.snapshot()
     with lock.from_env(owner="rxtune-atsc-servo", priority=60) as lk:
         try:
-            rep = serve(fe, scraper, meter, duration_s=a.servo, policy=policy, lock=lk,
+            measurer = Measurer(scraper, fe, meter, min_live=a.min_live)
+            rep = serve(fe, scraper, meter, duration_s=a.servo, policy=policy, lock=lk, measurer=measurer,
                         search=["gain:RFGR", "gain:IFGR"], coarse_points=a.coarse, max_cells=a.max_cells,
                         health=lambda: ("decoder exited" if proc.poll() is not None else None),
                         on_event=on_event)
