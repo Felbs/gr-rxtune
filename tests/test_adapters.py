@@ -58,10 +58,15 @@ def test_atsc_mer_formula_and_cliff():
 def test_nrsc5_dial_is_the_worse_sideband():
     sc = adapters.Nrsc5MerScraper()
     sc.feed("12:00:01 MER: 9.5 dB (lower), 11.2 dB (upper)\n")
+    assert sc.read() == 9.5
     sc.feed("12:00:02 MER: 12.0 dB (lower), 3.1 dB (upper)\n")     # one sideband wrecked
     sc.feed("12:00:02 Title: something\n")                          # metadata is not audio
     sc.feed("12:00:03 Audio bit rate: 48.2 kbps\n")                 # printed from VALID audio packets
-    assert [sc.read(), sc.read(), sc.read()] == [9.5, 3.1, None]
+    assert [sc.read(), sc.read()] == [3.1, None]
+    # a burst between two polls: the poll reads the NEWEST line, the backlog is dropped
+    sc.feed("12:00:04 MER: 8.0 dB (lower), 8.5 dB (upper)\n")
+    sc.feed("12:00:04 MER: 7.0 dB (lower), 9.0 dB (upper)\n")
+    assert [sc.read(), sc.read()] == [7.0, None]
     assert sc.count() == 1
     ber = adapters.nrsc5_ber_scraper()
     ber.feed("BER: 0.000420, avg: 0.000500, min: 0.0, max: 0.01\n")

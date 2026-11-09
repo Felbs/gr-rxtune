@@ -215,6 +215,8 @@ class Servo:
         self.counts[key] = self.counts.get(key, 0) + n
 
     def _spent(self, key: str, reading: Reading) -> None:
+        if self._t_first is None:
+            self._t_first = reading.t
         if reading.t >= self._now:
             self.time[key] = self.time.get(key, 0.0) + (reading.t - self._now)
             self._now = reading.t
@@ -224,9 +226,8 @@ class Servo:
                   None if reading is None else reading.value,
                   None if reading is None else reading.alive)
         self.events.append(e)
-        if self._t_first is None:
-            self._t_first = e.t
-        self.log.append(str(dataclasses.replace(e, t=e.t - self._t_first)))
+        t_rel = 0.0 if self._t_first is None else max(0.0, e.t - self._t_first)
+        self.log.append(str(dataclasses.replace(e, t=t_rel)))
         self.last_reason = reason
 
     def _cell_of(self, setting: Optional[Setting]) -> Optional[Cell]:

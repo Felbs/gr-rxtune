@@ -65,8 +65,16 @@ class LineScraper:
 
     # Dial
     def read(self) -> Optional[float]:
+        """The newest value since the last read; the backlog is dropped.  A decoder
+        that prints faster than the Measurer polls must not leave the dial reading
+        the past (seen live: 37 lines/s against ~5 polls/s put the dial 15 minutes
+        behind the knob by the end of a 30-cell search)."""
         with self._lock:
-            return self._vals.pop(0) if self._vals else None
+            if not self._vals:
+                return None
+            v = self._vals[-1]
+            self._vals.clear()
+            return v
 
     # Liveness
     def count(self) -> int:

@@ -156,8 +156,9 @@ def test_pipe_decoder_mode_a_scrapes_dial_and_liveness():
         time.sleep(0.05)
     dec.stop()
     assert sc.count() == 35
+    # five dial lines arrived between polls: a read is the newest, the backlog is dropped
     vals = [sc.read() for _ in range(5)]
-    assert vals == [11.5, 12.5, 10.5, 11.5, 12.5] and sc.read() is None
+    assert vals == [12.5, None, None, None, None] and sc.read() is None
     assert dec.proc is None
 
 

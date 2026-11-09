@@ -4,6 +4,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions: semantic.
 
 ## [0.1.0] - unreleased
 
+### Changed (2026-11-09, after the first radio runs of the servo example)
+- `LineScraper.read()` returns the newest value since the last read and drops the backlog.
+  It used to pop one value per poll, so a decoder printing faster than the Measurer polls
+  left the dial reading the past (live: 37 lines/s vs ~5 polls/s put the dial 15 minutes
+  behind the knob by the end of a 30-cell search, and the verdict picked a cell on another
+  cell's number).
+- `serve()` counts `duration_s` from the first verdict, not from the first knob write.
+- Servo log times are relative to the first reading.
+- `examples/hw_atsc_stvt_servo.py`: start-up waits for the chain's retune watcher (default
+  150 s), ack timeout 30 s, knob settle 10 s, equaliser telemetry every field sync.
+
 First extraction of the adaptive tuning loop into a standalone project.
 
 ### Added
