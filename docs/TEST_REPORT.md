@@ -501,3 +501,26 @@ the decoder's new gain-only same-channel retune allows (the full channel-change 
 the TS after a few same-channel retunes; that fix is on the decoder's side). Next on the
 radio: a marginal channel or evening fading, where the dial moves and the probe/re-search
 paths are judged against the stream.
+
+**The same afternoon, three more runs:**
+
+- *Two dead ports.* The A/B was repeated on a second UHF channel, and then on the first
+  channel's other antenna port; both were dead at midday (no carrier lock at any of 20-31
+  gain cells, input near the noise floor), so there was nothing to judge and both were
+  stopped through the warden's stop file. What they showed about the code: a `--watch-only`
+  arm whose search finds nothing has nothing to hold, so the servo re-searches, with knob
+  writes; "moves nothing" holds only once a cell was found. And a dead port costs a full
+  search budget (700 s) before the verdict says so.
+- *The ATSC 3.0 "judge decodes nothing" question is closed: it was the antenna port.* The
+  morning's regression on the September channel had used one port and decoded 0 blocks at
+  every gain. `hw_atsc3_capture.py --ports A B` surveyed both: port A BELOW_CLIFF at 15.1 dB,
+  port B HEALTHY, 16 of 35 cells decoding (13.0 to 22.0 dB), decode threshold observed between
+  15.3 and 16.7 dB, pick at 20.7 dB with +4.7 dB margin, 5 overloaded cells flagged, 945 s.
+  The receiver's own 75 s watch on port B then ran at 0.994x real time with 22 570 of 22 570
+  FEC blocks converged. The judge is fine; the port survey is the right first move on a new
+  channel.
+- *The warden race* (CHANGELOG, `ModuleLock`): a queued run took the radio from the live
+  antenna-port search because the site warden misread its own lock file mid-rewrite; the
+  holder then streamed unprotected for 2.5 minutes. Both halves are fixed (warden: read retry
+  with a gate; rxtune: a holder notices a lost lock and yields, heartbeats throttled,
+  `RXTUNE_LOCK_WAIT` for queued runs).
