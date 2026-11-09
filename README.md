@@ -117,6 +117,7 @@ rescue search with one and says why (`BLIND_DIAL`).
 
 ```
 pip install .                 # or: pip install -e .[test]
+# Arch/Omarchy (no system pip): python -m venv --system-site-packages .venv && .venv/bin/pip install -e .   (pacman -S python-numpy python-yaml soapysdr)
 rxtune selftest               # 13 numeric gates on a simulated receiver, no radio
 rxtune sim fading -v          # watch a search and its reasoning
 rxtune discover               # every knob your SoapySDR device reports
