@@ -524,3 +524,25 @@ paths are judged against the stream.
   holder then streamed unprotected for 2.5 minutes. Both halves are fixed (warden: read retry
   with a gate; rxtune: a holder notices a lost lock and yields, heartbeats throttled,
   `RXTUNE_LOCK_WAIT` for queued runs).
+
+**ATSC 3.0 like-for-like against September (same channel, same port, same example, same
+defaults):** the September run (22:00) and today's (12:00) have the same search structure
+(16 coarse, 18 refine, 1 confirm cells; 35 looks; 19 shared settings), pick the same LNA state
+(5) with the IF gain 14 dB lower today, and put the overload ridge at the same place (-10 vs
+-9 dBFS). What differs is the air: raw levels 6 to 8 dB lower today at every shared gain,
+15 decoding cells against 19, SNR a median 1.5 dB lower on the 6 shared decoding cells
+(-5.6 to +6.5; the +6.5 is a cell that sat in the overload ridge in September and is clear of
+it today). Verdict HEALTHY both times, 23.2 dB then, 20.7 dB now, both with the "cell budget
+exhausted before the search converged" note. The search is unchanged between the two code
+states; the servo work did not touch it.
+
+**What the ATSC 1.0 stream's "continuity errors" are (same day, a 247 s hold-phase slice at
+the held cell, 18.5 dB):** not the servo's and not RS failures. Nulls run at a flat 2.04 %
+(277/s, every second, 87 % single packets): the multiplex's own stuffing. The decoder rewrites
+RS-uncorrectable packets to nulls, and those show as the tail of long null runs (about ten
+runs of 23 to 50 packets in 247 s). The continuity errors (282, or 4100/h here; 2400/h in the
+morning's holds) sit in 38 of the 247 seconds, up to 19 in one second, spread over every PID
+in proportion to its packet rate, mostly gaps of 1 to 4 packets, and only a quarter of them
+follow a null run: short gaps in the decoder's output at a steady dial, about 0.02 % of
+packets. That is a decoder question, carried to the decoder's project; for the servo A/B it
+is a per-channel background that both arms shared.
