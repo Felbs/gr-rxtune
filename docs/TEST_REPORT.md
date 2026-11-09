@@ -471,3 +471,33 @@ re-acquires); telemetry every field sync (4.5 MER lines/s on that air, was 0.4/s
 7-cell search). The gain knob is real: the FPLL input level moved +20 dB for IFGR 40 -> 20
 and -6 dB for rfgain_sel 4 -> 6, despite the driver's "Gain reduction update timeout"
 warning on every write. The A/B itself waits for air that decodes (HANDOFF open work 0).
+
+**First A/B on a real radio (2026-11-09, later the same morning, a UHF channel that decodes):**
+two back-to-back runs on the same channel and antenna, each a 30-cell search (`--coarse 4
+--settle 6 --window 12`) and then a 3600 s hold; arm A `--watch-only` (search, then hold with
+the servo's verdicts logged but no knob writes), arm B the servo. The decoder is STVT in
+mode (b); the TS numbers come from the chain's `live.ts`, in which RS-uncorrectable packets
+are rewritten to nulls. Both arms picked the same cell at the same MER and the hold windows
+are the same to within noise:
+
+| arm | search | verdict | hold writes | probes | off held | MER min/med/max | TS cc_err /h | nulls | seq hdr /s |
+|---|---|---|---|---|---|---|---|---|---|
+| A watch-only | 698 s, 31 cells, 42 writes | HEALTHY 19.06 dB | 0 | 0 | 0.0 % | 18.7 / 19.1 / 19.5 | 2431 | 2.04 % | 4.48 |
+| B servo | 698 s, 31 cells, 43 writes | HEALTHY 19.22 dB | 0 | 0 | 0.0 % | 18.2 / 19.1 / 19.4 | 2448 | 2.02 % | 4.52 |
+
+Both holds: 76 windows, 2.42 MB/s, 0 TEI, 46.7 M packets. The servo did nothing after the
+search because nothing was asked of it: the dial never left the 3 dB comfort band (worst
+window p10 17.6 dB against a 15.2 dB cliff), liveness never dropped, so no probe and no
+re-search fired. That is the designed behaviour on steady air and it is also the limit of
+what this A/B shows: the probe and re-search paths have still only been exercised on the
+simulator. The continuity-error and null rates are equal across the arms and are the
+channel's own (the same rate during both searches' decoding cells), not the servo's.
+
+What the morning's runs changed (all in `CHANGELOG`): `LineScraper.read()` now returns the
+newest value, not the oldest (the dial had been 15 minutes behind the knob by the end of a
+search); `serve()` counts the hold from the verdict; the example gained `--min-live` (10
+sequence headers per window, 4.5/s is the decoding rate here) and a 4 s knob settle, which
+the decoder's new gain-only same-channel retune allows (the full channel-change path stalled
+the TS after a few same-channel retunes; that fix is on the decoder's side). Next on the
+radio: a marginal channel or evening fading, where the dial moves and the probe/re-search
+paths are judged against the stream.

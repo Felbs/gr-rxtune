@@ -57,9 +57,12 @@ GRC needs `GRC_BLOCKS_PATH=<repo>/grc`.
 0. **The servo on a real radio** (TEST_REPORT §11): `examples/hw_atsc_stvt_servo.py`
    on the ATSC 1.0 chain (mode (b): STVT's persistent retune is the knob, the TV keeps
    playing; `--watch-only` is the A/B arm), then ATSC 3.0; count knob writes after the
-   search, time off the held setting, probes kept, TS continuity errors per arm. The
-   first live question is whether OnAir's thresholds (3 dB comfort, 10 s unlock) suit
-   a TV decoder's lock time, and what a same-channel retune costs the FPLL.
+   search, time off the held setting, probes kept, TS continuity errors per arm.
+   Status 2026-11-09: first A/B done on steady air (both arms identical, 0 writes after
+   the search, servo idle by design). Still open: the same A/B on a marginal channel or
+   through evening fading, where the probe and re-search paths fire; whether OnAir's
+   thresholds (3 dB comfort, 10 s unlock) suit the decoder's lock time is only answerable
+   there. A same-channel retune is gain-only on the decoder's side now (no FPLL cost).
    Status 2026-11-09: two smoke runs on the radio (TEST_REPORT s11, last paragraph) fixed the
    example's timings; the air sat 4 dB under the cliff at every gain, so the A/B itself is
    still owed. Run it with RXTUNE_LOCK set to the site lock module and outside any

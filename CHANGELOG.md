@@ -13,7 +13,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions: semantic.
 - `serve()` counts `duration_s` from the first verdict, not from the first knob write.
 - Servo log times are relative to the first reading.
 - `examples/hw_atsc_stvt_servo.py`: start-up waits for the chain's retune watcher (default
-  150 s), ack timeout 30 s, knob settle 10 s, equaliser telemetry every field sync.
+  150 s), ack timeout 30 s, knob settle 4 s (the decoder's same-channel retune is gain-only),
+  `--min-live` liveness floor, equaliser telemetry every field sync.
+- `docs/TEST_REPORT.md` §11: the first A/B of the servo on a real radio (steady air: both
+  arms identical, servo idle by design).
 
 First extraction of the adaptive tuning loop into a standalone project.
 
