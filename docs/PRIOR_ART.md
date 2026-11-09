@@ -174,6 +174,39 @@ for CGRAN later), CI on a matrix of official GNU Radio containers running
 the structure. With Python-only blocks we have no ABI to manage, so Layer 1
 is a plain pip-installable package and CMake exists only for Layer 2.
 
+## 10. OnAir auto gain (adswill/OnAir) — GPL-3.0, documentation read only
+
+Read 2026-11-08: `docs/AUTOGAIN.md` (sections 2 "Algorithms", 8 "Auto v2", 9).
+A multi-mode SDR receiver whose one auto-gain system serves every radio and
+mode. Its first loop servoed the wideband headroom and froze on lock; the
+authors' own account of why that disappointed ("a decoder that locked once
+froze the loop at that gain") is the clearest statement we found of the hold
+problem, and v2 is their answer:
+
+- **Lock freeze, qualified.** Rest only when the decoder is `comfortDb` over its
+  lock threshold, and even then re-probe every 30 s.
+- **Re-run triggers.** Retune, mode/rate change, the decoder unlocked for 10 s,
+  the objective fallen 3 dB below the settled value. The 3 dB trigger is off for
+  pulsed modes (ADS-B), whose message rate follows the traffic of the hour.
+- **Quality guard / hill climb.** A step is kept when the objective improves by
+  more than `improveDb` and 1.5 sigma of its noise, otherwise undone exactly; a
+  rejected neighbour is not retried for 6 s (30 s when comfortably locked), the
+  interval growing 6 / 12 / 24 / 45 s. Cost reported: 5-20 % of the time on a
+  neighbouring gain while not comfortably locked.
+- **Overload.** Immediate and proportional (6 dB first, more with more clipping).
+- **Not verified on hardware** (their words): thresholds tuned on a simulated
+  front end.
+
+What we took (ideas, in `servo.py`, 2026-11-08): the three rules above with
+their numbers as defaults (comfort 3 dB, 30 s re-look, 10 s unlock, 3 dB sag,
+1.5 sigma, 6/12/24/45 s back-off), the counting-dial exemption, and the
+proportional overload descent as one axis step per window. What we did not:
+their objective. OnAir servos MER/SNR; our hold, probe and re-search are judged
+by decoder truth (liveness first), an IMPULSE verdict disables the overload
+trigger, rails are compared with what the verdict accepted at the held cell,
+and every re-search re-measures the incumbent beside the new pick before either
+is kept. No code was read; the documentation was.
+
 ## Licensing conclusion
 
 GPL-3.0-or-later for gr-rxtune stands. Everything we might borrow *code* from
@@ -192,6 +225,7 @@ original header.
 | Curve kept? | no | no | no | no | yes - and classified |
 | Says "it's physical"? | no | no | no | no | yes, in dB |
 | Any SDR / any decoder | no / no | no / 2 | yes / n.a. | n.a. | yes / yes |
+| After the search | servo forever | nightly | servo forever | n.a. | hold while comfortable; probe / re-search on triggers; undo what worsened the truth (after OnAir, section 10) |
 
 ## URLs read
 
@@ -207,3 +241,4 @@ original header.
 - repository.arizona.edu/handle/10150/650872 (Elkadi 2020)
 - github.com/igorauad/gr-dvbs2rx: tree, `docs/`, `.github/workflows/test.yml`, `CHANGELOG.md`, `MANIFEST.md`, `CMakeLists.txt`
 - github.com/gnuradio/gnuradio (maint-3.10 = v3.10.12.0) and osmocom/gr-osmosdr - see `DESIGN.md` section 5
+- github.com/adswill/OnAir: `docs/AUTOGAIN.md` (2026-11-08; documentation only, no source read)

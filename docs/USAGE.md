@@ -71,6 +71,27 @@ extends it if the answer is outside).
 
 Outer loops — ports, channels, recovery configs — are `stages.survey(...)`.
 
+## 3b. After the search: the servo
+
+```python
+from rxtune.servo import serve, ServoPolicy
+rep = serve(frontend, dial, liveness, duration_s=7200,
+            policy=ServoPolicy(comfort=3.0, reprobe_s=30, unlock_s=10, sag=3.0))
+print(rep)              # held setting, searches / probes / kept / reverted, time off the held setting
+for e in rep.events:    # every decision with its reason and the reading that caused it
+    print(e)
+```
+
+`serve()` takes everything `tune()` takes, runs the search, then holds the winner
+for `duration_s` (or until `until()` says so) and leaves the radio on it. With
+`ServoPolicy(autonomous=False)` it only watches: the triggers (unlocked, sag,
+overload) are counted and logged, no knob moves after the search. The CLI has
+the same switch: `rxtune tune ... --servo 7200`, `rxtune sim near_cliff --servo 3000 -v`.
+
+In GNU Radio the Controller runs the servo when *Servo after the search* is on
+(`auto_recal=True`); `ctrl` accepts `{retune}` as well as `{recal}`, and a request
+that arrives while the servo rests starts the search at once.
+
 ## 4. Read the verdict
 
 | Shape | Means | Recommended? |

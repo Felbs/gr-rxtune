@@ -22,3 +22,16 @@ First extraction of the adaptive tuning loop into a standalone project.
   example, `util/night_watch.py`, observed decode threshold, re-pick on failed confirmation,
   minimum evidence for counting dials.
 - docs: prior art, design, usage, migration plan for the parent projects, test report.
+- `rxtune.servo` (2026-11-08): what happens AFTER the search. `Servo` (stepwise, the
+  Tuner's API) and `serve()` (blocking): hold while comfortably over the cliff with a
+  look every 30 s, probe a neighbour while the margin is small and undo any step that
+  does not better the truth (resolution and 1.5 sigma; back-off 6/12/24/45 s), re-search
+  only on a trigger (unlocked 10 s, sag 3 dB, request, overload above what the verdict
+  accepted) with the incumbent re-measured beside the new winner; an overload descent
+  one step per window; counting dials exempt from the sag trigger. Three rules after
+  OnAir's auto gain (ideas; PRIOR_ART section 10), the objective stays decoder truth.
+  Controller block runs the servo (`auto_recal` = servo on; new `comfort`, `reprobe_s`,
+  `unlock_s`, `sag_hold_s`; `ctrl {retune}`; verdict carries `held` and servo counts).
+  CLI `sim --servo S`, `tune --servo S`. Simulator: `Scenario.timeline` (the air changes
+  while a setting is held), `n_writes`, scenarios `near_cliff`, `dropout`,
+  `neighbour_arrives`, `slow_fade`, `traffic_drops`. 13 new tests.

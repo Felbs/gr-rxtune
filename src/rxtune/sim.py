@@ -61,6 +61,8 @@ class Scenario:
     ignore_writes_to: Optional[str] = None  # a knob that accepts writes and does nothing
     blind_below: Optional[float] = None    # CRC-style dial: 0 below this SNR
     gain_offset_db: float = 0.0            # loss between the LNA and the converter
+    # the air changes while a servo holds: [(t_s, field, value), ...] applied in order
+    timeline: list = field(default_factory=list)
 
 
 SCENARIOS = {
@@ -84,6 +86,19 @@ SCENARIOS = {
     "stuck_knob": Scenario("stuck_knob", ignore_writes_to="gain:IF"),
     "crc_dial": Scenario("crc_dial", blind_below=15.0),
     "crc_dial_dead": Scenario("crc_dial_dead", signal_dbm=-99.0, blind_below=15.0),
+    # servo scenarios: a signal just over the cliff (the loop may not rest), and
+    # three airs that change under a held setting
+    "near_cliff": Scenario("near_cliff", signal_dbm=-86.0, ext_noise_dbm=-107.0),
+    # (the first search ends at about 430-475 s of virtual time; the air changes after it)
+    "dropout": Scenario("dropout", timeline=[(600.0, "signal_dbm", -200.0),
+                                             (900.0, "signal_dbm", -62.0)]),
+    "neighbour_arrives": Scenario("neighbour_arrives", signal_dbm=-70.0,
+                                  timeline=[(600.0, "interferer_dbm", -7.0)]),
+    "slow_fade": Scenario("slow_fade", signal_dbm=-80.0, ext_noise_dbm=-107.0,
+                          timeline=[(600.0, "signal_dbm", -86.0), (1200.0, "signal_dbm", -89.0)]),
+    # a counting dial whose rate falls with the traffic, not the radio
+    "traffic_drops": Scenario("traffic_drops", blind_below=15.0,
+                              timeline=[(600.0, "mer_cap", 22.0)]),
 }
 
 SIM_MER = DialSpec("MER", "dB", cliff=15.2, settle_s=2.0, window_s=8.0, poll_s=0.25)
@@ -105,6 +120,8 @@ class SimReceiver:
         self._live = 0.0
         self._t_live = self.clock.now()
         self._t_change = -1e9
+        self.n_writes = 0
+        self._timeline = sorted(self.sc.timeline)
         self.spec = SIM_CRC if self.sc.blind_below is not None else SIM_MER
         sense = "reduction" if senses_known else "unknown"
         self._specs = {
@@ -127,6 +144,7 @@ class SimReceiver:
 
     def _set(self, name: str, value: Any) -> None:
         self._writes[name] = value
+        self.n_writes += 1
         if name == self.sc.ignore_writes_to:
             return
         self.state[name] = value
@@ -143,7 +161,14 @@ class SimReceiver:
         return {"level_db": m["level_db"] + self.rng.gauss(0, 0.1), "clip": clip}
 
     # ---- the link budget ------------------------------------------------
+    def _advance_timeline(self) -> None:
+        t = self.clock.now()
+        while self._timeline and self._timeline[0][0] <= t:
+            _, name, value = self._timeline.pop(0)
+            setattr(self.sc, name, value)
+
     def _model(self) -> dict:
+        self._advance_timeline()
         sc = self.sc
         rf, ifr = int(self.state["gain:RF"]), float(self.state["gain:IF"])
         ant = sc.antenna_gain_db.get(self.state["antenna"], 0.0)

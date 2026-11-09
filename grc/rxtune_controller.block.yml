@@ -28,7 +28,8 @@ templates:
         higher_is_better=${higher_is_better}, settle_s=${settle_s}, window_s=${window_s},
         continuous_below_cliff=${continuous}, min_samples=${min_samples}, dialect=${dialect},
         autostart=${autostart}, pick=${pick}, coarse_points=${coarse_points},
-        max_cells=${max_cells}, fixed=${fixed}, auto_recal=${auto_recal}, sag=${sag})
+        max_cells=${max_cells}, fixed=${fixed}, auto_recal=${auto_recal}, sag=${sag},
+        sag_hold_s=${sag_hold_s}, comfort=${comfort}, reprobe_s=${reprobe_s}, unlock_s=${unlock_s})
 
 parameters:
 - id: axes
@@ -103,14 +104,34 @@ parameters:
   default: 'True'
   hide: part
 - id: auto_recal
-  label: Recalibrate on dial sag
+  label: Servo after the search
   dtype: bool
   default: 'False'
   hide: part
 - id: sag
   label: Sag threshold
   dtype: real
-  default: '1.5'
+  default: '3.0'
+  hide: part
+- id: sag_hold_s
+  label: Sag hold (s)
+  dtype: real
+  default: '10.0'
+  hide: part
+- id: comfort
+  label: Comfort over the cliff
+  dtype: real
+  default: '3.0'
+  hide: part
+- id: reprobe_s
+  label: Rest between looks (s)
+  dtype: real
+  default: '30.0'
+  hide: part
+- id: unlock_s
+  label: Unlocked this long -> re-search (s)
+  dtype: real
+  default: '10.0'
   hide: part
 
 inputs:

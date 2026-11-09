@@ -7,10 +7,10 @@
 #
 """rxtune Controller: headless. Dial messages in, command dicts out.
 
-It runs the pure-Python rxtune search as a state machine. It never blocks a
-scheduler thread: dial messages only fill an accumulator, and a small ticker
-thread closes windows on wall-clock time, so a dial that goes SILENT still
-ends its cell (silence is a measurement)."""
+It runs the pure-Python rxtune servo (search -> hold -> probe / re-search) as a
+state machine. It never blocks a scheduler thread: dial messages only fill an
+accumulator, and a small ticker thread closes windows on wall-clock time, so a
+dial that goes SILENT still ends its cell (silence is a measurement)."""
 import threading
 import time
 
@@ -23,10 +23,10 @@ from rxtune import commands as cmds
 from rxtune.dial import DialSpec
 from rxtune.knob import KnobSpec
 from rxtune.measure import Accumulator
-from rxtune.optimize import Axis, Tuner
-from rxtune.verdict import judge
+from rxtune.optimize import Axis
+from rxtune.servo import Servo, ServoPolicy
 
-IDLE, SEARCHING, HOLDING = "idle", "searching", "holding"
+IDLE, SEARCHING, HOLDING, PROBING = "idle", "searching", "holding", "probing"
 
 
 def _axis(d):
@@ -46,17 +46,24 @@ class controller(gr.basic_block):
            liveness  monotone counter of decoded content (number or pair)
            level     {level_db, clip} raw-sample look (optional overload veto)
            readback  {knob, value, readback} from a Message Setter (optional)
-           ctrl      {start} | {stop} | {recal}
+           ctrl      {start} | {stop} | {recal} | {retune}
       out: cmd       ONE dict per knob write, in the chosen dialect
            status    {state, cell, setting, value, reason}
-           verdict   the Verdict and the measured curve
+           verdict   the Verdict and the measured curve (one per search)
+
+    After the search the servo holds the winner. With `auto_recal` (the servo
+    switch) it also probes a neighbour while the margin over the cliff is under
+    `comfort`, undoing any step that does not better the truth, re-searches when
+    nothing decodes for `unlock_s` or the dial sags `sag` under its settled value,
+    and judges the incumbent again beside every new winner. Without it, it only
+    watches and reports the triggers in `status`.
     """
 
     def __init__(self, axes=(), dial_name="dial", units="dB", cliff=None, higher_is_better=True,
                  settle_s=1.0, window_s=2.0, continuous_below_cliff=True, min_samples=5,
                  dialect="soapy", chan=None, autostart=True, pick="headroom", coarse_points=5,
-                 max_cells=120, fixed=None, auto_recal=False, sag=1.5, sag_hold_s=10.0,
-                 frontend=None, allow_unsafe=False):
+                 max_cells=120, fixed=None, auto_recal=False, sag=3.0, sag_hold_s=10.0,
+                 frontend=None, allow_unsafe=False, comfort=3.0, reprobe_s=30.0, unlock_s=10.0):
         gr.basic_block.__init__(self, name="rxtune_controller", in_sig=None, out_sig=None)
         self.spec = DialSpec(dial_name, units, higher_is_better=bool(higher_is_better),
                              cliff=None if cliff in (None, "", "None") else float(cliff),
@@ -67,7 +74,9 @@ class controller(gr.basic_block):
         self.dialect, self.chan = dialect, chan
         self.pick, self.coarse_points, self.max_cells = pick, int(coarse_points), int(max_cells)
         self.fixed = dict(fixed or {})
-        self.auto_recal, self.sag, self.sag_hold_s = bool(auto_recal), float(sag), float(sag_hold_s)
+        self.policy = ServoPolicy(autonomous=bool(auto_recal), comfort=float(comfort),
+                                  reprobe_s=float(reprobe_s), unlock_s=float(unlock_s),
+                                  sag=float(sag), sag_hold_s=float(sag_hold_s))
         self.frontend = frontend           # device-handle mode: write knobs directly, with readback
         self.autostart = bool(autostart)
         self.allow_unsafe = bool(allow_unsafe)
@@ -78,7 +87,7 @@ class controller(gr.basic_block):
 
         self._lock = threading.RLock()
         self.state = IDLE
-        self.tuner = None
+        self.servo = None
         self.acc = None
         self.current = {}
         self.pending = None
@@ -88,8 +97,7 @@ class controller(gr.basic_block):
         self._direct = None
         self._readback_seen = set()
         self._last_live = None
-        self._ema = None
-        self._sag_since = None
+        self._published = 0
         self._ticker = None
         self._alive = threading.Event()
 
@@ -120,13 +128,21 @@ class controller(gr.basic_block):
 
     def begin(self, reason="start"):
         with self._lock:
-            self.tuner = Tuner(self.axes, self.spec, coarse_points=self.coarse_points,
-                               max_cells=self.max_cells, pick=self.pick)
-            self.verdict, self.warnings = None, []
-            self._ema, self._sag_since = None, None
+            self.servo = Servo(self.axes, self.spec, self.policy,
+                               tuner_kw=dict(coarse_points=self.coarse_points, max_cells=self.max_cells,
+                                             pick=self.pick),
+                               closed_loop=self._closed)
+            self.verdict, self.warnings, self._published = None, [], 0
             self.state = SEARCHING
             self._status(reason)
-            self._advance(self.tuner.propose())
+            self._advance(self.servo.propose())
+
+    def _closed(self):
+        # closed-loop = every searched knob was read back (device handle, or a Message
+        # Setter with getters wired to 'readback') and nothing disagreed
+        verified = self.frontend is not None or all(
+            a.spec.name in self._readback_seen for a in self.axes)
+        return verified and not self.warnings
 
     # ---- message handlers (scheduler threads) -----------------------------------
     @staticmethod
@@ -141,7 +157,7 @@ class controller(gr.basic_block):
                 value = d.get("value")
                 if self.acc is not None:
                     self.acc.add_level(d, now)
-                if d.get("cell_done") and self.state == SEARCHING and self.acc is not None:
+                if d.get("cell_done") and self.acc is not None:
                     # an aggregated result for the WHOLE cell (rxtune Capture Dial): close
                     # the cell now; it carries its own n / p10 / p90
                     self._direct = d
@@ -152,10 +168,8 @@ class controller(gr.basic_block):
                 value = None if value is None else float(value)
             except (TypeError, ValueError):
                 return
-            if self.state == SEARCHING and self.acc is not None:
+            if self.acc is not None:
                 self.acc.add(value, now)
-            elif self.state == HOLDING and value is not None:
-                self._watch(value, now)
 
     def _on_liveness(self, msg):
         with self._lock:
@@ -187,16 +201,29 @@ class controller(gr.basic_block):
         if "stop" in d:
             with self._lock:
                 self.state, self.acc = IDLE, None
+                if self.servo is not None:
+                    self.servo.stop()
                 self._status("stopped by ctrl")
-        elif "start" in d or "recal" in d:
-            self.begin("recal requested" if "recal" in d else "start requested")
+            return
+        reason = next((f"{k} requested" for k in ("recal", "retune", "start") if k in d), None)
+        if reason is None:
+            return
+        with self._lock:
+            if self.servo is None or self.state == IDLE:
+                self.begin(reason)
+                return
+            nxt = self.servo.request(reason)
+            self._status(reason)
+            if nxt is not None:                   # the servo was resting: the search starts now
+                self.acc = None
+                self._advance(nxt)
 
     # ---- the state machine ---------------------------------------------------------
     def _tick_loop(self):
         while self._alive.is_set():
             time.sleep(0.05)
             with self._lock:
-                if self.state != SEARCHING or self.acc is None:
+                if self.state == IDLE or self.acc is None:
                     continue
                 now = time.monotonic()
                 if self.have_liveness and self._last_live is not None:
@@ -206,7 +233,7 @@ class controller(gr.basic_block):
                     reading = self._apply_direct(reading)
                     self.acc = None
                     self._status("cell done", reading)
-                    self._advance(self.tuner.report(reading))
+                    self._advance(self.servo.report(reading))
 
     def _apply_direct(self, reading):
         d, self._direct = self._direct, None
@@ -225,19 +252,25 @@ class controller(gr.basic_block):
             reading.p10, reading.p90 = min(a, b), max(a, b)
         return reading
 
-    def _advance(self, setting):
-        if setting is None:
-            return self._finish()
-        setting = dict(setting)
+    def _advance(self, prop):
+        self._publish_verdicts()
+        if prop is None:
+            self.state = IDLE
+            self._status("servo ended")
+            return
+        setting = dict(prop)
         scale = setting.pop("__window_scale__", 1.0)
+        wait = setting.pop("__wait_s__", 0.0)
+        self.state = {"searching": SEARCHING, "holding": HOLDING, "probing": PROBING}.get(
+            self.servo.state, SEARCHING)
         self.pending = setting
         self._direct = None
         settle = self._write({**self.fixed, **setting})
         self.message_port_pub(pmt.intern("status"), pmt.to_pmt(_plain(
-            {"state": self.state, "reason": "cell start", "setting": setting, "settle_s": settle,
-             "window_scale": scale, "cell": len(self.tuner.result.points) + 1,
-             "mode": self._mode()})))
-        self.acc = Accumulator(self.spec, time.monotonic(), settle_s=self.spec.settle_s + settle,
+            {"state": self.state, "reason": "cell start" if self.state == SEARCHING else self.servo.last_reason,
+             "setting": setting, "settle_s": settle, "wait_s": wait, "window_scale": scale,
+             "cell": self.servo.cells + 1, "mode": self._mode()})))
+        self.acc = Accumulator(self.spec, time.monotonic(), settle_s=self.spec.settle_s + settle + wait,
                                window_s=self.spec.window_s * scale)
 
     def _write(self, setting):
@@ -261,50 +294,34 @@ class controller(gr.basic_block):
         self.current.update(setting)
         return settle
 
-    def _finish(self):
-        # closed-loop = every searched knob was read back (device handle, or a Message
-        # Setter with getters wired to 'readback') and nothing disagreed
-        verified = self.frontend is not None or all(
-            a.spec.name in self._readback_seen for a in self.axes)
-        closed = verified and not self.warnings
-        v = judge(self.tuner.result, self.spec, self.tuner.gain_of, closed_loop=closed)
-        v.notes.extend(self.warnings)
-        self.verdict = v
-        target = v.best or v.candidate
-        if target is not None:
-            self._write({**self.fixed, **target})     # leave the radio on the best cell found
-        self.state = HOLDING
-        doc = v.as_dict()
-        doc["curve"] = self.tuner.result.curve()
-        doc["log"] = self.tuner.result.log
-        self.message_port_pub(pmt.intern("verdict"), pmt.to_pmt(_plain(doc)))
-        self._status("verdict: " + v.shape.value)
-
-    def _watch(self, value, now):
-        """Recalibration trigger: the live dial sags below what was calibrated."""
-        score = self.spec.score(value)
-        self._ema = score if self._ema is None else self._ema + 0.2 * (score - self._ema)
-        ref = self.verdict.evidence.get("best_score") if self.verdict else None
-        if ref is None:
-            return
-        if self._ema < ref - self.sag:
-            self._sag_since = self._sag_since or now
-            if now - self._sag_since >= self.sag_hold_s:
-                self._sag_since = None
-                self._status(f"dial sagged {ref - self._ema:.1f} below the calibrated value")
-                if self.auto_recal:
-                    self.begin("recal: dial sag")
-        else:
-            self._sag_since = None
+    def _publish_verdicts(self):
+        """One verdict message per finished search, with its curve and log."""
+        while self.servo is not None and self._published < len(self.servo.verdicts):
+            v = self.servo.verdicts[self._published]
+            self._published += 1
+            v.notes.extend(w for w in self.warnings if w not in v.notes)
+            self.verdict = v
+            doc = v.as_dict()
+            result = self.servo.tuner.result if self.servo.tuner is not None else None
+            doc["curve"] = result.curve() if result else []
+            doc["log"] = list(result.log) if result else []
+            doc["held"] = self.servo.held
+            doc["servo"] = {"counts": dict(self.servo.counts), "time": dict(self.servo.time),
+                            "events": [str(e) for e in self.servo.events[-20:]]}
+            self.message_port_pub(pmt.intern("verdict"), pmt.to_pmt(_plain(doc)))
+            self._status("verdict: " + v.shape.value)
 
     def _mode(self):
         return ("device-handle" if self.frontend is not None else
                 "message + readback" if self._readback_seen else "message (open-loop)")
 
     def _status(self, reason, reading=None):
-        n = len(self.tuner.result.points) if self.tuner else 0
+        n = self.servo.cells if self.servo is not None else 0
         doc = {"state": self.state, "cell": n, "setting": dict(self.pending or {}), "reason": reason,
                "mode": self._mode()}
+        if self.servo is not None:
+            doc["held"] = self.servo.held
+            doc["servo"] = self.servo.last_reason
         if reading is not None:
             doc.update({"value": reading.value, "alive": reading.alive, "level_db": reading.level_db,
                         "overload": reading.overload, "n": reading.n})

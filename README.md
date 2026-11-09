@@ -41,6 +41,11 @@ VERDICT  APERTURE_LIMITED  -  MER 6.2 dB, 9.0 dB short of the cliff - this is ph
 5. **Recalibrate forever.** Every result is stored against a fingerprint of the
    RF path and never reused across a change; the product is the loop, not the
    settings.
+6. **Then hold, and move only for a reason.** After the search a servo keeps
+   the winner: it rests while the decoder is comfortably over its threshold,
+   probes a neighbour while the margin is small and undoes every step that does
+   not better the truth, and searches again only on a trigger (nothing decoded
+   for ten seconds, the dial sagged, a retune). See *After the search* below.
 
 ## Two layers
 
@@ -153,10 +158,46 @@ Read from the GNU Radio 3.10 source and then **measured on hardware**
 Hence the Message Setter block, and the controller's *device-handle mode* in
 which it holds the SoapySDR device itself and reads every write back.
 
+## After the search: the servo
+
+`tune()` answers "which setting?" once. `serve()` (and the Controller block, with
+*Servo after the search* on) answers "and now what?" for as long as the radio runs,
+by three rules taken as ideas from the auto-gain loop of
+[OnAir](https://github.com/adswill/OnAir) (its `docs/AUTOGAIN.md`, "Auto v2"):
+
+1. **Hold while locked, but only while comfortable.** A lock alone is not a
+   reason to stop looking (their first loop froze on a marginal gain for hours);
+   the servo rests only when the dial is `comfort` (3 dB) over the decode
+   threshold, and still measures the held setting every 30 s.
+2. **Re-run on triggers only.** Nothing decoded for `unlock_s` (10 s), the dial
+   `sag` (3 dB) under its settled value for 10 s, a retune or a request. Never on
+   a clock, never on a message-rate dial's sag (the traffic of the hour is not the
+   radio).
+3. **Undo a step that made the truth worse, exactly.** A probed neighbour is kept
+   only if it beats the held truth by the dial's resolution *and* 1.5 sigma of the
+   two readings' noise; otherwise the radio goes back and that neighbour waits
+   6, 12, 24, 45 s before another try. The same rule judges a whole re-search: the
+   incumbent is measured again beside the new winner, and the better by decoder
+   truth is kept.
+
+What stays ours: the objective is decoder truth (liveness first, dial second: no
+cell nothing decoded in is ever held), rails are judged against what the verdict
+accepted (an `IMPULSE` verdict is not an overload), and every re-search ends in a
+whole-curve verdict. `tests/test_servo.py` proves each rule with a positive and a
+negative control on the simulated receiver while the air changes under a held
+setting; the numbers are in `docs/TEST_REPORT.md` §11.
+
+```
+python -m rxtune sim near_cliff --servo 3000 -v      # watch the three rules on a flat plateau
+python -m rxtune tune ... --servo 7200              # two hours of holding a real radio
+```
+
 ## Status
 
 0.1.0 — first extraction. `docs/TEST_REPORT.md` says exactly what was tested,
 what failed, and what could not be tested and why. Not yet on CGRAN or conda.
+The servo (2026-11-08) is proven on the simulator only; its first hardware run
+is owed (TEST_REPORT §11).
 
 ## GPS: the loop that found nothing to win
 
@@ -235,3 +276,9 @@ version is `docs/PRIOR_ART.md`):
 - **[GNU Radio](https://www.gnuradio.org/)** — and in particular the in-tree
   Python Qt widgets in gr-qtgui, whose pattern our dashboard follows line for
   line.
+- **[OnAir](https://github.com/adswill/OnAir)** (adswill) — its auto-gain loop
+  (`docs/AUTOGAIN.md`, "Auto v2") is where the servo's three rules come from:
+  rest only when comfortably locked and still re-probe, re-run on triggers only,
+  and undo a step that made the objective worse with a growing back-off. Ideas
+  only, read from their documentation; their objective is MER/SNR, ours stays
+  decoder truth.

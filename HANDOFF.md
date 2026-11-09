@@ -5,6 +5,9 @@ runtime-discovered SDR knobs, and the curve's shape becomes an honest verdict.
 Extracted in spirit from two existing receiver projects, neither of which was
 modified. State: **0.1.0 built and tested** — core, GNU Radio blocks, GRC
 examples, hardware runs. Published 2026-09-21 on the owner's instruction.
+2026-11-08: `rxtune.servo` added (hold / probe / re-search after the search, three
+rules after OnAir's auto gain, objective unchanged); proven on the simulator
+(`tests/test_servo.py`, TEST_REPORT §11), **not yet run on hardware**.
 **Every push runs the dox gate on the exact commits first. Upstream bug reports
 are drafted in docs/UPSTREAM_REPORTS.md and NOT filed; filing is the owner's call.**
 
@@ -51,6 +54,11 @@ GRC needs `GRC_BLOCKS_PATH=<repo>/grc`.
 - Do not send gr-soapy `setting` commands to a SoapySDRPlay source: it stops the block.
 
 ## Open work, most valuable first
+0. **The servo on a real radio** (TEST_REPORT §11): `rxtune tune ... --servo 3600`
+   on the ATSC 1.0 chain (STVT, `--decoder`), then on ATSC 3.0; count knob writes,
+   time off the held setting, and whether a probe was ever kept. The first live
+   question is whether OnAir's thresholds (3 dB comfort, 10 s unlock) suit a
+   TV decoder's lock time.
 1. **Mode (a) for the ATSC chain** (teach it to take IQ from a pipe/ZMQ): cells
    drop from ~30 s to ~10 s and the overload veto becomes available. See MIGRATION.
 2. Run the QA and the headless example on Linux and on a Raspberry Pi; run the

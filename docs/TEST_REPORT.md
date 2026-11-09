@@ -433,3 +433,32 @@ closed file, its error handling dropped the sink, and every later cell recorded 
 "void" cells in a row and a verdict (IMPULSE) built on nothing. The drain now owns the record file
 and closes it itself, after a sentinel queued behind the cell's last chunk; the GPS judge pins its
 BLAS threads; 126 tests pass. It never showed on ATSC 3.0 because that judge is a subprocess.
+
+## 11. The servo, on the simulator (2026-11-08)
+
+`tests/test_servo.py`, 13 tests, ~1.5 s, all passing (139 in the suite). Each of the
+three rules has a positive and a negative control; the air changes under a held
+setting through `Scenario.timeline`. The same runs from `rxtune sim <scenario> --servo
+3000`, 3000 s of virtual time each, default `ServoPolicy`:
+
+| scenario | what changes | searches | probes (kept / reverted / descended) | triggers | off the held setting | end |
+|---|---|---|---|---|---|---|
+| healthy | nothing | 1 | 0 | none | **0.0 %** (65 looks, 0 knob writes after the search) | proven |
+| near_cliff (margin 1.0 dB) | nothing | 1 | 41 (0 / 41 / 0) | none | 16.3 % (back-off 6/12/24/45 s; every revert put the radio back exactly) | proven |
+| dropout | air gone 600-900 s | 2 | 0 | unlocked x1, 38.5 s after the drop | 9.9 % | STARVED re-search -> incumbent stays, unproven -> proven again by the first live look |
+| neighbour_arrives | -7 dBm neighbour at 600 s | 2 | 33 (1 / 30 / 2) | overload x1, unlocked x1 | 34.7 % | 2-step descent cleared the rails; ISLAND found and adopted (incumbent re-measured silent); one probe kept, +0.25 dB (needed 0.24) |
+| slow_fade | -80 -> -86 dBm at 600 s, -89 at 1200 s | 6 | 3 (0 / 3 / 0) | sag x1 (4.5 dB), unlocked x4 | 79.2 % | after the sag the new pick (16.21) did not beat the incumbent (16.20) by 0.24 -> reverted; under the cliff the re-searches are fruitless and the unlock wait doubles 10 / 20 / 40 / 80 s |
+| traffic_drops (rate dial) | rate 305 -> 145 msgs/s at 600 s | 1 | 0 | none | 0.0 % | a counting dial's sag is not a trigger |
+| impulse | nothing (rails at every gain, verdict IMPULSE) | 1 | 0 | none | 0.0 % | rails the verdict accepted are not an overload |
+
+What the negative controls caught while this was built: the first cut read the
+IMPULSE scenario's rails (0.45-0.6 of looks) as an overload and walked a 30 dB dial
+down to 17.9 dB in twelve steps (now: rails are compared with what the verdict
+accepted at the held cell, never under IMPULSE, and the descent undoes a step that
+costs `sag` of the dial); the first probe cadence had no global interval and spent
+73 % of the time off an island's held cell (now 16-35 %, OnAir reports 5-20 % for
+theirs); a fruitless re-search on a dead air repeated every 10 s (now the unlock wait
+doubles).
+
+**Not tested:** any radio. The thresholds are OnAir's, tuned by them on a simulated
+front end and by us on ours; the first hardware run is open work 0 in HANDOFF.md.

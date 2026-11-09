@@ -194,6 +194,25 @@ class qa_controller(gr_unittest.TestCase):
         self.assertEqual(len(c.verdicts), 2)
         self.assertTrue(any("recal" in s["reason"] for s in c.status))
 
+    def test_008_the_hold_rests_and_a_request_interrupts_it(self):
+        pl = plant()
+        ctl = rxtune.controller(axes=AX2, dialect="soapy", **FAST)
+        tb, c = self.wire(ctl, pl)
+        tb.start()
+        self.assertTrue(c.done.wait(90.0))
+        n_cmds = len(pl.cmds)
+        time.sleep(1.0)                   # resting: comfortable (25 dB, cliff 15) -> no command
+        self.assertEqual(len(pl.cmds), n_cmds)
+        self.assertTrue(any(s["state"] == "holding" for s in c.status))
+        c.done.clear()
+        ctl.to_basic_block()._post(pmt.intern("ctrl"), pmt.to_pmt({"retune": True}))
+        ok = c.done.wait(90.0)            # the rest is interrupted; a second search runs at once
+        tb.stop()
+        tb.wait()
+        self.assertTrue(ok)
+        self.assertEqual(len(c.verdicts), 2)
+        self.assertGreater(len(pl.cmds), n_cmds)
+
     def test_007_status_reports_open_loop_mode(self):
         pl = plant()
         ctl = rxtune.controller(axes=[{"name": "gain:a", "lo": 0, "hi": 20, "step": 4, "sense": "gain"}],

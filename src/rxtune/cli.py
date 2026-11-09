@@ -89,6 +89,16 @@ def cmd_sim(args) -> int:
     from .loop import tune
     from .sim import SimReceiver
     rx = SimReceiver(args.scenario, seed=args.seed)
+    if args.servo:
+        from .servo import serve
+        rep = serve(rx, rx, rx, duration_s=args.servo, clock=rx.clock, fixed={"antenna": "A"},
+                    pick=args.pick)
+        if args.verbose:
+            print("\n".join(rep.log))
+        print(rep)
+        print(f"  verdicts: {', '.join(v.shape.value for v in rep.verdicts)}; {rx.n_writes} knob writes; "
+              f"{rx.clock.now():.0f} s of simulated time")
+        return 0
     rep = tune(rx, rx, rx, clock=rx.clock, fixed={"antenna": "A"}, pick=args.pick)
     if args.verbose:
         print("\n".join(rep.result.log))
@@ -133,21 +143,37 @@ def cmd_tune(args) -> int:
         prof = profile.find(fe.info)
         fe.apply_profile(prof)
         fixed = {"antenna": args.antenna} if args.antenna else {}
+        common = dict(lock=lk, fixed=fixed, health=dec.health,
+                      search=args.search or (prof.search or None), pick=args.pick,
+                      coarse_points=args.coarse, max_cells=args.max_cells,
+                      known_bad=prof.is_known_bad(), thresholds=prof.thresholds or None)
+        servo_rep = None
         try:
             fe.start(sink=dec.start())
-            rep = tune(fe, scraper, scraper if args.live_re else None, lock=lk, fixed=fixed,
-                       health=dec.health,
-                       search=args.search or (prof.search or None), pick=args.pick,
-                       coarse_points=args.coarse, max_cells=args.max_cells,
-                       known_bad=prof.is_known_bad(), thresholds=prof.thresholds or None,
-                       on_cell=lambda s, r: print(f"  {s} -> {r.value} alive={r.alive} "
-                                                  f"lvl={r.level_db:.1f} rails={r.overload:.2f}",
-                                                  flush=True))
+            if args.servo:
+                from .servo import serve
+                servo_rep = serve(fe, scraper, scraper if args.live_re else None,
+                                  duration_s=args.servo, **common,
+                                  on_event=lambda st, s, r: print(
+                                      f"  [{st:9}] {s} -> {r.value} alive={r.alive} "
+                                      f"lvl={r.level_db:.1f} rails={r.overload:.2f}", flush=True))
+                rep = None
+            else:
+                rep = tune(fe, scraper, scraper if args.live_re else None, **common,
+                           on_cell=lambda s, r: print(f"  {s} -> {r.value} alive={r.alive} "
+                                                      f"lvl={r.level_db:.1f} rails={r.overload:.2f}",
+                                                      flush=True))
             integ = fe.integrity()
         finally:
             fe.stop()
             dec.stop()
             fe.close()
+    if servo_rep is not None:
+        print("\n".join(servo_rep.log))
+        print(servo_rep)
+        print(f"  stream : ratio {integ['ratio']:.3f} overflows {integ['overflows']} "
+              f"dropped {integ['dropped_buffers']}")
+        return 0 if servo_rep.proven else 2
     print(rep)
     print(f"  stream : ratio {integ['ratio']:.3f} overflows {integ['overflows']} "
           f"dropped {integ['dropped_buffers']}")
@@ -181,6 +207,8 @@ def main(argv=None) -> int:
     p.add_argument("scenario")
     p.add_argument("--seed", type=int, default=7)
     p.add_argument("--pick", default="headroom")
+    p.add_argument("--servo", type=float, metavar="SECONDS",
+                   help="after the search, hold / probe / re-search for this long (simulated)")
     p.add_argument("-v", "--verbose", action="store_true")
     p.set_defaults(fn=cmd_sim)
     p = sub.add_parser("discover")
@@ -211,6 +239,9 @@ def main(argv=None) -> int:
     p.add_argument("--priority", type=int, default=60)
     p.add_argument("--out", help="directory for the stored result")
     p.add_argument("--label", default="", help="your name for this antenna / RF path")
+    p.add_argument("--servo", type=float, metavar="SECONDS",
+                   help="after the search, run the servo (hold while comfortable, probe a neighbour "
+                        "while the margin is small, re-search on unlock / sag) for this long")
     p.set_defaults(fn=cmd_tune)
     p = sub.add_parser("report")
     p.add_argument("file")

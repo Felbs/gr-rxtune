@@ -188,6 +188,43 @@ Staleness: results are keyed by an RF-path fingerprint (device, port,
 bias-T, user-supplied antenna label) and never reused across a change;
 recal triggers = path change, dial sag vs stored, age, explicit.
 
+Servo (`servo.py`, 2026-11-08): the generator that runs AFTER the search, with
+the Tuner's stepwise API (`propose()` / `report(reading)`), so the blocking
+`serve()` and the GNU Radio controller share one implementation. States
+`searching -> holding -> probing`. A proposal is a Setting plus `__window_scale__`
+and `__wait_s__` (rest this long at the held setting before measuring).
+
+```
+ServoPolicy(autonomous=True, comfort=3.0, reprobe_s=30, unlock_s=10, sag=3.0,
+            sag_hold_s=10, backoff_s=(6, 12, 24, 45), improve_sigma=1.5,
+            overload=0.3, probe_step=1, descent_max=12, fruitless_max=4)
+```
+
+- hold: measure the held setting; rest `reprobe_s` between looks when
+  `score - threshold >= comfort` and decoding (threshold = the dial's cliff, else
+  the observed one; none known -> decoding is comfort). Triggers: not alive for
+  `unlock_s` (doubled after each fruitless re-search, up to 2^`fruitless_max`),
+  EMA of the score under the settled value by `sag` for `sag_hold_s` (continuous
+  dials only), a `request()`, rails at the held setting above what the verdict
+  accepted there plus `overload` (never under an IMPULSE verdict).
+- probe: while not comfortable, one neighbour per window (ordered axes round
+  robin, more gain first); kept iff `truth_better(probe, held, improve)` with
+  `improve = max(resolution, improve_sigma * sigma)` and sigma from the wider
+  p10..p90 of the two readings / 2.56; else written back exactly, that cell backed
+  off `backoff_s[n]`, and the next probe no sooner than the same interval.
+- descent: on an overload trigger, one step toward less gain per window until
+  the rails clear; a step that loses content or `sag` of the dial the clipped cell
+  still had is undone (impulse noise, not overload).
+- re-search: a fresh Tuner and `judge()`; the incumbent is measured again (2x
+  window) beside the new winner and `truth_better` decides; nothing recommendable
+  -> the incumbent stays, unproven, and is proven again by the first live hold
+  reading.
+- `truth_better(a, b, improve)`: alive beats not-alive; a silent dial loses; else
+  `a.score > b.score + improve`.
+- `ServoReport`: held, proven, verdicts, events, counts (searches, probes, kept,
+  reverted, descended, adopted, reverted_search, kept_incumbent, reproven,
+  trigger:*), time (holding_s, probing_s, research_s) and `off_held_share`.
+
 Device sharing: `DeviceLock` protocol, `NullLock` by default. On this rig an
 adapter to the existing cooperative lock is supplied from *outside* the repo
 (local config, not committed), with heartbeat in the measure loop,
