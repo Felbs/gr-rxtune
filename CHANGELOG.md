@@ -17,6 +17,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions: semantic.
   `--min-live` liveness floor, equaliser telemetry every field sync.
 - `docs/TEST_REPORT.md` §11: the first A/B of the servo on a real radio (steady air: both
   arms identical, servo idle by design).
+- `ModuleLock`: `should_yield()` also reports a LOST lock (the site lock's `status()` names
+  another holder, or nobody, while we hold) so the run stops instead of streaming without
+  its reservation; heartbeats throttled to one per 2 s; `RXTUNE_LOCK_WAIT` sets the wait for
+  a busy radio (default 10 s). Found when a warden misread let a waiter take the radio from a
+  live run.
 
 First extraction of the adaptive tuning loop into a standalone project.
 

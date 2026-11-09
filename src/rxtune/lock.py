@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import time
 from typing import Optional, Protocol
 
 
@@ -42,7 +43,7 @@ class ModuleLock:
     The module's path is configuration, not part of this repository."""
 
     def __init__(self, path: str, owner: str = "rxtune", purpose: str = "receiver tuning",
-                 priority: int = 50, wait_s: float = 10.0):
+                 priority: int = 50, wait_s: float = 10.0, beat_s: float = 2.0):
         spec = importlib.util.spec_from_file_location("rxtune_site_lock", path)
         if spec is None or spec.loader is None:
             raise ImportError(f"cannot load lock module {path}")
@@ -51,6 +52,8 @@ class ModuleLock:
         self.owner, self.purpose, self.priority, self.wait_s = owner, purpose, priority, wait_s
         self.held = False
         self._depth = 0
+        self.beat_s = beat_s                 # heartbeats closer than this are dropped
+        self._last_beat = float("-inf")
 
     def __enter__(self):
         # RE-ENTRANT: a script holds the lock for its whole session and hands the same
@@ -74,18 +77,46 @@ class ModuleLock:
         return False
 
     def heartbeat(self) -> None:
+        """Keep the hold alive; at most one write per `beat_s` (the Measurer calls this
+        every poll, 5x a second, and a site lock that rewrites a file need not be)."""
         if self.held:
-            self.mod.heartbeat()
+            now = time.monotonic()
+            if now - self._last_beat >= self.beat_s:
+                self._last_beat = now
+                self.mod.heartbeat()
 
     def should_yield(self) -> Optional[str]:
+        """A stop request, a higher-priority waiter, or a lock that is no longer ours.
+        The last one was found on the radio: another process took the lock while we
+        streamed (the warden misread its own file mid-rewrite), our heartbeats then went
+        nowhere, and the run went on unprotected.  A site lock that exposes status() as
+        {owner, ...} (or None) lets the holder notice and stop cleanly."""
         stop = getattr(self.mod, "stop_requested", None)
         if stop and stop(self.owner):
             return "stop requested"
         fn = getattr(self.mod, "should_yield", None)
-        return fn() if fn else None
+        reason = fn() if fn else None
+        if reason:
+            return reason
+        status = getattr(self.mod, "status", None)
+        if self.held and status:
+            try:
+                st = status()
+            except Exception:
+                return None
+            if isinstance(st, dict) and st.get("owner") != self.owner:
+                return f"lock lost: the radio is held by {st.get('owner')} ({st.get('purpose', '?')})"
+            if st is None:
+                return "lock lost: the radio shows free while we hold it"
+        return None
 
 
 def from_env(owner: str = "rxtune", priority: int = 50) -> DeviceLock:
-    """RXTUNE_LOCK=/path/to/lock_module.py selects a site lock."""
+    """RXTUNE_LOCK=/path/to/lock_module.py selects a site lock; RXTUNE_LOCK_WAIT (seconds,
+    default 10) is how long to wait for a busy radio before giving up (a queued run wants
+    minutes)."""
     path = os.environ.get("RXTUNE_LOCK")
-    return ModuleLock(path, owner=owner, priority=priority) if path else NullLock()
+    if not path:
+        return NullLock()
+    wait_s = float(os.environ.get("RXTUNE_LOCK_WAIT", "10"))
+    return ModuleLock(path, owner=owner, priority=priority, wait_s=wait_s)
