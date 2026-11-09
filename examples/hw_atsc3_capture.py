@@ -91,6 +91,9 @@ def main():
                            f"  spread {r.spread:.2f}  n={r.n}  {'DECODES' if r.alive else 'no decode'}"
                            f"  [{r.note}]  level {r.level_db:.1f} dBFS  rails {r.overload:.2f}", flush=True))
             integ = fe.integrity()
+        except lock.Yielded as y:
+            print(f"yielded the radio: {y}", flush=True)
+            return 4
         finally:
             fe.close()
     print(rep)

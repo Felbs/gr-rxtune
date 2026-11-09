@@ -265,6 +265,9 @@ def main():
                         search=["gain:RFGR", "gain:IFGR"], coarse_points=a.coarse, max_cells=a.max_cells,
                         health=lambda: ("decoder exited" if proc.poll() is not None else None),
                         on_event=on_event)
+        except lock.Yielded as y:
+            print(f"yielded the radio: {y}", flush=True)
+            return 4
         finally:
             closed = graceful_stop(proc, grace_s=15.0)
             chain_log.close()
