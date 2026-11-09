@@ -54,11 +54,12 @@ GRC needs `GRC_BLOCKS_PATH=<repo>/grc`.
 - Do not send gr-soapy `setting` commands to a SoapySDRPlay source: it stops the block.
 
 ## Open work, most valuable first
-0. **The servo on a real radio** (TEST_REPORT §11): `rxtune tune ... --servo 3600`
-   on the ATSC 1.0 chain (STVT, `--decoder`), then on ATSC 3.0; count knob writes,
-   time off the held setting, and whether a probe was ever kept. The first live
-   question is whether OnAir's thresholds (3 dB comfort, 10 s unlock) suit a
-   TV decoder's lock time.
+0. **The servo on a real radio** (TEST_REPORT §11): `examples/hw_atsc_stvt_servo.py`
+   on the ATSC 1.0 chain (mode (b): STVT's persistent retune is the knob, the TV keeps
+   playing; `--watch-only` is the A/B arm), then ATSC 3.0; count knob writes after the
+   search, time off the held setting, probes kept, TS continuity errors per arm. The
+   first live question is whether OnAir's thresholds (3 dB comfort, 10 s unlock) suit
+   a TV decoder's lock time, and what a same-channel retune costs the FPLL.
 1. **Mode (a) for the ATSC chain** (teach it to take IQ from a pipe/ZMQ): cells
    drop from ~30 s to ~10 s and the overload veto becomes available. See MIGRATION.
 2. Run the QA and the headless example on Linux and on a Raspberry Pi; run the
