@@ -27,6 +27,7 @@ Tuner's confirmation uses) and `__wait_s__` (sleep this long at the held
 setting before measuring; the rest in rule 1)."""
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Generator, List, Optional, Sequence, Tuple
 
@@ -152,6 +153,7 @@ class Servo:
         self.verdicts: List[Verdict] = []
         self.events: List[Event] = []
         self.log: List[str] = []
+        self._t_first: Optional[float] = None
         self.counts: Dict[str, int] = {}
         self.time: Dict[str, float] = {}
         self.tuner: Optional[Tuner] = None
@@ -222,7 +224,9 @@ class Servo:
                   None if reading is None else reading.value,
                   None if reading is None else reading.alive)
         self.events.append(e)
-        self.log.append(str(e))
+        if self._t_first is None:
+            self._t_first = e.t
+        self.log.append(str(dataclasses.replace(e, t=e.t - self._t_first)))
         self.last_reason = reason
 
     def _cell_of(self, setting: Optional[Setting]) -> Optional[Cell]:
@@ -556,7 +560,8 @@ def serve(frontend: Frontend, dial: Dial, liveness: Optional[Liveness] = None, *
           health: Optional[Callable[[], Optional[str]]] = None, measurer=None,
           until: Optional[Callable[[], bool]] = None, servo: Optional[Servo] = None) -> ServoReport:
     """The blocking runner: tune(), then hold / probe / re-search for `duration_s`
-    (or until `until()` says so). Leaves the radio on the held setting."""
+    counted from the first verdict (or until `until()` says so). Leaves the radio
+    on the held setting."""
     lock = lock or NullLock()
     clock = clock or Clock()
     policy = policy or ServoPolicy()
@@ -582,7 +587,7 @@ def serve(frontend: Frontend, dial: Dial, liveness: Optional[Liveness] = None, *
                       tuner_kw=dict(coarse_points=coarse_points, max_cells=max_cells, pick=pick,
                                     known_bad=known_bad),
                       closed_loop=lambda: closed and not failed, thresholds=thresholds)
-    t_end = clock.now() + duration_s
+    t_end: List[Optional[float]] = [None]      # armed by the first verdict
 
     def measure(prop: dict) -> Reading:
         reason = lock.should_yield()
@@ -609,10 +614,13 @@ def serve(frontend: Frontend, dial: Dial, liveness: Optional[Liveness] = None, *
                 raise DecoderDied(problem)
         if on_event:
             on_event(servo.state, setting, reading)
+        if t_end[0] is None and servo.state != "searching":
+            t_end[0] = clock.now() + duration_s      # the hold starts at the verdict
         return reading
 
     with lock:
-        servo.run(measure, lambda: clock.now() >= t_end or (until is not None and until()))
+        servo.run(measure, lambda: (t_end[0] is not None and clock.now() >= t_end[0])
+                   or (until is not None and until()))
         if servo.held is not None:
             try:
                 apply(frontend, {**(fixed or {}), **servo.held}, current)

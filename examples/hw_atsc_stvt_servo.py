@@ -110,7 +110,7 @@ class TsMeter:
 class RetuneFrontend:
     """Mode (b) for STVT: gain knobs written through the running chain's retune.cmd."""
 
-    def __init__(self, out_dir: str, rf: int, scraper, rfgr, ifgr, ack_timeout: float = 6.0):
+    def __init__(self, out_dir: str, rf: int, scraper, rfgr, ifgr, ack_timeout: float = 30.0):
         self.cmd_path = os.path.join(out_dir, "retune.cmd")
         self.ack_path = os.path.join(out_dir, "retune.ack")
         self.rf, self.scraper, self.ack_timeout = rf, scraper, ack_timeout
@@ -118,9 +118,9 @@ class RetuneFrontend:
         self.writes = 0
         self._specs = [
             KnobSpec("gain:RFGR", "range", rfgr[0], rfgr[1], 1, sense="reduction", role="regime",
-                     settle_s=3.0, note="rfgain_sel (LNA state) via retune.cmd"),
+                     settle_s=10.0, note="rfgain_sel (LNA state) via retune.cmd"),
             KnobSpec("gain:IFGR", "range", ifgr[0], ifgr[1], 1, sense="reduction", role="level",
-                     settle_s=3.0, note="IFGR via retune.cmd")]
+                     settle_s=10.0, note="IFGR via retune.cmd")]
         self._key = {"gain:RFGR": "rfgain_sel", "gain:IFGR": "ifgr"}
 
     def knobs(self):
@@ -186,7 +186,8 @@ def main():
     ap.add_argument("--unlock", type=float, default=10.0)
     ap.add_argument("--reprobe", type=float, default=30.0)
     ap.add_argument("--out-dir", required=True, help="live.ts, retune.cmd/ack, chain.log, events.jsonl")
-    ap.add_argument("--startup", type=float, default=20.0, help="seconds to wait for the chain's first MER line")
+    ap.add_argument("--startup", type=float, default=150.0,
+                    help="seconds to wait for the chain's retune watcher (the SDRplay API can hold the device ~60 s after a previous chain)")
     a = ap.parse_args()
 
     os.makedirs(a.out_dir, exist_ok=True)
@@ -206,7 +207,7 @@ def main():
                 "STVT_EQ": "long", "STVT_VITERBI": "soft", "STVT_RFNOTCH": "1",
                 "STVT_DABNOTCH": "0" if a.rf < 14 else "1", "STVT_RS": "stock", "STVT_SPS": "1.1",
                 "STVT_RRC_SYMS": "8", "STVT_TEISCRUB": "1", "STVT_EQ_LKG": "1", "STVT_EQ_LKG_RMS": "1.0",
-                "STVT_EQ_TELEM": "1", "STVT_PERSIST_RETUNE": "1"})
+                "STVT_EQ_TELEM": "1", "STVT_EQ_TELEM_EVERY": "1", "STVT_PERSIST_RETUNE": "1"})
     env.pop("PYTHONPATH", None)
     proc = popen_group([a.python, "-u", a.tv_live, "--rf", str(a.rf), "--out", ts], env=env,
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -220,12 +221,22 @@ def main():
     fe = RetuneFrontend(a.out_dir, a.rf, scraper, a.rfgr, a.ifgr)
     fe.state = {"rfgain_sel": a.start[0], "ifgr": a.start[1]}
     t0 = time.time()
-    while time.time() - t0 < a.startup and scraper.read() is None:
+    armed, seen_mer = False, False
+    while time.time() - t0 < a.startup:
         if proc.poll() is not None:
             print("the chain exited during start-up; see chain.log")
             return 3
+        armed = any("PERSIST-RETUNE: watcher armed" in ln for ln in scraper.tail)
+        seen_mer = seen_mer or scraper.read() is not None      # read() pops: remember it
+        if armed and seen_mer:
+            break
         time.sleep(0.5)
-    print(f"chain up after {time.time() - t0:.0f} s; first MER lines seen: {scraper.read() is not None}")
+    print(f"chain up after {time.time() - t0:.0f} s; retune watcher armed: {armed}; "
+          f"first MER lines seen: {seen_mer}", flush=True)
+    if not armed:
+        print("the chain never armed its retune watcher; the knobs cannot be written -- stopping")
+        graceful_stop(proc, grace_s=15.0)
+        return 3
 
     events = open(os.path.join(a.out_dir, "events.jsonl"), "a", encoding="utf-8")
     search_writes = {"n": None}

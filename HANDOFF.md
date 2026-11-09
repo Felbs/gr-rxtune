@@ -60,6 +60,10 @@ GRC needs `GRC_BLOCKS_PATH=<repo>/grc`.
    search, time off the held setting, probes kept, TS continuity errors per arm. The
    first live question is whether OnAir's thresholds (3 dB comfort, 10 s unlock) suit
    a TV decoder's lock time, and what a same-channel retune costs the FPLL.
+   Status 2026-11-09: two smoke runs on the radio (TEST_REPORT s11, last paragraph) fixed the
+   example's timings; the air sat 4 dB under the cliff at every gain, so the A/B itself is
+   still owed. Run it with RXTUNE_LOCK set to the site lock module and outside any
+   scheduled holder's window; a same-RF retune costs ~8 s plus the chain's re-acquire.
 1. **Mode (a) for the ATSC chain** (teach it to take IQ from a pipe/ZMQ): cells
    drop from ~30 s to ~10 s and the overload veto becomes available. See MIGRATION.
 2. Run the QA and the headless example on Linux and on a Raspberry Pi; run the

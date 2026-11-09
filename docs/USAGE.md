@@ -83,7 +83,8 @@ for e in rep.events:    # every decision with its reason and the reading that ca
 ```
 
 `serve()` takes everything `tune()` takes, runs the search, then holds the winner
-for `duration_s` (or until `until()` says so) and leaves the radio on it. With
+for `duration_s` counted from the first verdict (or until `until()` says so) and
+leaves the radio on it. With
 `ServoPolicy(autonomous=False)` it only watches: the triggers (unlocked, sag,
 overload) are counted and logged, no knob moves after the search. The CLI has
 the same switch: `rxtune tune ... --servo 7200`, `rxtune sim near_cliff --servo 3000 -v`.

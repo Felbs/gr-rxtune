@@ -439,15 +439,16 @@ BLAS threads; 126 tests pass. It never showed on ATSC 3.0 because that judge is 
 `tests/test_servo.py`, 13 tests, ~1.5 s, all passing (139 in the suite). Each of the
 three rules has a positive and a negative control; the air changes under a held
 setting through `Scenario.timeline`. The same runs from `rxtune sim <scenario> --servo
-3000`, 3000 s of virtual time each, default `ServoPolicy`:
+3000`, 3000 s of virtual time held after the first verdict (the search is not counted), default
+`ServoPolicy` (re-run 2026-11-09 after that change to `serve()`):
 
 | scenario | what changes | searches | probes (kept / reverted / descended) | triggers | off the held setting | end |
 |---|---|---|---|---|---|---|
-| healthy | nothing | 1 | 0 | none | **0.0 %** (65 looks, 0 knob writes after the search) | proven |
-| near_cliff (margin 1.0 dB) | nothing | 1 | 41 (0 / 41 / 0) | none | 16.3 % (back-off 6/12/24/45 s; every revert put the radio back exactly) | proven |
-| dropout | air gone 600-900 s | 2 | 0 | unlocked x1, 38.5 s after the drop | 9.9 % | STARVED re-search -> incumbent stays, unproven -> proven again by the first live look |
-| neighbour_arrives | -7 dBm neighbour at 600 s | 2 | 33 (1 / 30 / 2) | overload x1, unlocked x1 | 34.7 % | 2-step descent cleared the rails; ISLAND found and adopted (incumbent re-measured silent); one probe kept, +0.25 dB (needed 0.24) |
-| slow_fade | -80 -> -86 dBm at 600 s, -89 at 1200 s | 6 | 3 (0 / 3 / 0) | sag x1 (4.5 dB), unlocked x4 | 79.2 % | after the sag the new pick (16.21) did not beat the incumbent (16.20) by 0.24 -> reverted; under the cliff the re-searches are fruitless and the unlock wait doubles 10 / 20 / 40 / 80 s |
+| healthy | nothing | 1 | 0 | none | **0.0 %** (76 looks, 0 knob writes after the search) | proven |
+| near_cliff (margin 1.0 dB) | nothing | 1 | 48 (0 / 48 / 0) | none | 16.2 % (back-off 6/12/24/45 s; every revert put the radio back exactly) | proven |
+| dropout | air gone 600-900 s | 2 | 0 | unlocked x1 | 8.4 % | STARVED re-search -> incumbent stays, unproven -> proven again by the first live look |
+| neighbour_arrives | -7 dBm neighbour at 600 s | 2 | 40 (1 / 37 / 2) | overload x1, unlocked x1 | 31.8 % | 2-step descent cleared the rails; ISLAND found and adopted (incumbent re-measured silent); one probe kept, +0.25 dB (needed 0.24) |
+| slow_fade | -80 -> -86 dBm at 600 s, -89 at 1200 s | 7 | 3 (0 / 3 / 0) | sag x1 (4.5 dB), unlocked x5 | 77.9 % | after the sag the new pick (16.21) did not beat the incumbent (16.20) by 0.24 -> reverted; under the cliff the re-searches are fruitless and the unlock wait doubles 10 / 20 / 40 / 80 / 160 s; the run ends with the incumbent held unproven |
 | traffic_drops (rate dial) | rate 305 -> 145 msgs/s at 600 s | 1 | 0 | none | 0.0 % | a counting dial's sag is not a trigger |
 | impulse | nothing (rails at every gain, verdict IMPULSE) | 1 | 0 | none | 0.0 % | rails the verdict accepted are not an overload |
 
@@ -460,5 +461,13 @@ costs `sag` of the dial); the first probe cadence had no global interval and spe
 theirs); a fruitless re-search on a dead air repeated every 10 s (now the unlock wait
 doubles).
 
-**Not tested:** any radio. The thresholds are OnAir's, tuned by them on a simulated
-front end and by us on ours; the first hardware run is open work 0 in HANDOFF.md.
+**First radio contact (2026-11-09, ATSC 1.0 via `examples/hw_atsc_stvt_servo.py`, mode (b)):**
+two smoke runs on a marginal UHF channel, MER 11 dB median at every gain cell (cliff 15.2 dB),
+nothing decoded, so no A/B yet. What they fixed in the example: start-up now waits for the
+chain's retune watcher (the SDRplay API held the device 64 s after a previous chain); the ack
+timeout is 30 s and the knob settle 10 s (a same-RF retune takes ~8 s, then the chain
+re-acquires); telemetry every field sync (4.5 MER lines/s on that air, was 0.4/s); and
+`serve()` now counts `duration_s` from the first verdict (a 300 s budget had been spent on a
+7-cell search). The gain knob is real: the FPLL input level moved +20 dB for IFGR 40 -> 20
+and -6 dB for rfgain_sel 4 -> 6, despite the driver's "Gain reduction update timeout"
+warning on every write. The A/B itself waits for air that decodes (HANDOFF open work 0).
