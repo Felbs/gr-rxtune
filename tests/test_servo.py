@@ -244,3 +244,23 @@ def test_descent_reverts_a_step_that_costs_the_truth():
     assert cleared is True
     assert servo.held == {"gain:RF": 2, "gain:IF": 40}
     assert servo.counts.get("reverted", 0) == 1
+
+
+def test_until_ends_a_hold_rest_within_a_second():
+    """A viewer who leaves must not wait out the hold's rest: `until` is looked at in every
+    one-second slice of it. (Found live: a stop request took 96 s to release the radio, because
+    the hold only tested `until` between looks, about every 48 s, and then the chain had to close.)"""
+    rx = SimReceiver("healthy")
+    seen = {}
+
+    def on_event(state, setting, reading):
+        if state == HOLDING:
+            seen.setdefault("hold_t", rx.clock.now())
+
+    def until():                       # the viewer leaves 3 s into the first rest
+        return "hold_t" in seen and rx.clock.now() >= seen["hold_t"] + 3.0
+
+    rep = serve(rx, rx, rx, duration_s=1e9, clock=rx.clock, fixed=FIXED, on_event=on_event, until=until)
+    late = rx.clock.now() - (seen["hold_t"] + 3.0)
+    assert late <= 1.5, f"stopped {late:.1f} s after being asked"
+    assert rep.held and state_matches(rx, rep.held), "the radio is left on the held setting"

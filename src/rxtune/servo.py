@@ -550,6 +550,11 @@ def _fmt(r: Optional[Reading]) -> str:
     return v + ("" if r.alive is None else " alive" if r.alive else " not-alive")
 
 
+class _UntilReached(Exception):
+    """serve()'s `until` came true during a rest (found live: a viewer's stop waited out the
+    30 s rest and the look after it before the radio was released)."""
+
+
 def serve(frontend: Frontend, dial: Dial, liveness: Optional[Liveness] = None, *,
           duration_s: float, policy: Optional[ServoPolicy] = None,
           search: Optional[Sequence[str]] = None, fixed: Optional[Setting] = None,
@@ -604,6 +609,8 @@ def serve(frontend: Frontend, dial: Dial, liveness: Optional[Liveness] = None, *
                 failed[part.split(":")[0]] = failed.get(part.split(":")[0], 0) + 1
             settle = getattr(e, "settle_s", 0.0)
         while wait > 0:                       # the rest, in slices, keeping the lock alive
+            if until is not None and until():
+                raise _UntilReached()         # the caller is done: do not sit out the rest and one more look
             step = min(wait, 1.0)
             clock.sleep(step)
             wait -= step
@@ -620,8 +627,11 @@ def serve(frontend: Frontend, dial: Dial, liveness: Optional[Liveness] = None, *
         return reading
 
     with lock:
-        servo.run(measure, lambda: (t_end[0] is not None and clock.now() >= t_end[0])
-                   or (until is not None and until()))
+        try:
+            servo.run(measure, lambda: (t_end[0] is not None and clock.now() >= t_end[0])
+                      or (until is not None and until()))
+        except _UntilReached:
+            pass
         if servo.held is not None:
             try:
                 apply(frontend, {**(fixed or {}), **servo.held}, current)
