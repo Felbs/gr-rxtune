@@ -264,3 +264,13 @@ def test_until_ends_a_hold_rest_within_a_second():
     late = rx.clock.now() - (seen["hold_t"] + 3.0)
     assert late <= 1.5, f"stopped {late:.1f} s after being asked"
     assert rep.held and state_matches(rx, rep.held), "the radio is left on the held setting"
+
+
+# ------------------------------------------------------------ the time accounting
+def test_time_spent_starts_at_the_first_reading():
+    """A real clock reads the machine's uptime: found on air 2026-11-09, search_s = 2.6 days."""
+    s = Servo.__new__(Servo)
+    s._t_first, s._now, s.time = None, 0.0, {}
+    s._spent("search_s", Reading(value=19.0, t=200000.0))
+    s._spent("search_s", Reading(value=19.0, t=200030.0))
+    assert s.time["search_s"] == 30.0

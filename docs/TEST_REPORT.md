@@ -546,3 +546,34 @@ in proportion to its packet rate, mostly gaps of 1 to 4 packets, and only a quar
 follow a null run: short gaps in the decoder's output at a steady dial, about 0.02 % of
 packets. That is a decoder question, carried to the decoder's project; for the servo A/B it
 is a per-channel background that both arms shared.
+
+**Evening, a fixed-setting interleave, and dawn (2026-11-09 to 11-10, RF 34, one port, via tvTuna's chain):**
+three more one-hour holds and one interleave. In every hold the servo made no knob write after the
+search: 0 probes, 0 re-searches, the dial never left the comfort band (MER range over the whole hold
+never wider than 0.35 dB). So the probe and re-search paths have still only run on the simulator.
+
+| run | held RFGR/IFGR | MER mean (min..max) | cc errors in the hold | per minute | zero-error windows |
+|---|---|---|---|---|---|
+| evening, watch-only | 0/56 | 19.20 (19.03..19.38) | 1700 in 3616 s | 28.2 | 6 of 75 |
+| evening, servo, an hour later | 4/40 | 19.36 (19.21..19.52) | 638 in 3615 s | 10.6 | 22 of 75 |
+| dawn, servo | 0/53 | 19.37 (19.23..19.52) | 1607 in 4531 s | 21.3 | 8 of 94 |
+
+The evening pair looked like a gain-setting effect, and it is not one. One chain, the two evening
+settings alternated A B B A in 150 s blocks with a 10 s settle, 12 blocks:
+
+| setting | blocks | cc errors | per minute | per block | median MER |
+|---|---|---|---|---|---|
+| 4/40 | 6 | 252 | 16.8 | 14, 27, 61, 62, 21, 67 | 19.4 |
+| 0/56 | 6 | 244 | 16.2 | 38, 51, 41, 27, 59, 28 | 19.4 |
+
+The spread between blocks at one setting is far larger than the difference between settings. Hour-apart
+arms cannot compare a setting on this channel: the rate drifts by a factor of 2-3 on its own.
+
+Where the errors sit, from the recordings: short bursts across several PIDs at once (median 6-7 errors,
+one burst every 13-19 s on average, clumpy), 0 TEI, and the equaliser's training error is the same in
+seconds with a burst as in clean seconds (0.5693 vs 0.5690 interleave, 0.5746 vs 0.5732 dawn). The
+gain search cannot see these and cannot fix them. Whether they are the air or the receiver chain is
+not known yet; the test is one IQ recording decoded twice.
+
+The `search_s` figure in these runs' `report.json` was wrong (about 2.6 days; fixed since): `_spent()` counted the
+first reading from `_now = 0`, so the first interval was the machine's uptime.

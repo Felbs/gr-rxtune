@@ -217,6 +217,8 @@ class Servo:
     def _spent(self, key: str, reading: Reading) -> None:
         if self._t_first is None:
             self._t_first = reading.t
+            if self._now == 0.0:          # time starts at the first reading (a real clock reads the
+                self._now = reading.t     # machine's uptime: that must not count as time spent)
         if reading.t >= self._now:
             self.time[key] = self.time.get(key, 0.0) + (reading.t - self._now)
             self._now = reading.t

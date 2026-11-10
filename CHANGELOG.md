@@ -4,6 +4,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions: semantic.
 
 ## [0.1.0] - unreleased
 
+### Fixed (2026-11-10)
+- The servo's time accounting starts at the first reading. On a real clock `search_s` had
+  included the machine's uptime (a 12-minute search reported as 2.6 days).
+
 ### Changed (2026-11-09, after the first radio runs of the servo example)
 - `LineScraper.read()` returns the newest value since the last read and drops the backlog.
   It used to pop one value per poll, so a decoder printing faster than the Measurer polls
